@@ -40,13 +40,29 @@ an id present in both tables (796) works and persists normally.
    one of those would silently teach the wrong thing. Classic ids need moving
    into a range `sTalentStore` doesn't already use before they mean anything
    server-side.
-2. **Find where this server's DBC pack actually lives.** The worldserver runs
-   in Docker (`acore/ac-wotlk-worldserver`, via `azerothcore-wotlk`'s
-   `docker-compose.yml`); its `Talent.dbc`/`TalentTab.dbc` are inside the
-   image/volume, not on the host filesystem at an obvious path -- this was
-   looked for once and not found. A `docker-compose.override.yml` volume
-   mount (the same mechanism `azerothcore-wotlk`'s override already uses for
-   SOAP) is the likely fix once the real path is known.
+2. ~~Find where this server's DBC pack actually lives.~~ **Found and
+   confirmed.** Not a host path at all -- a named Docker volume,
+   `azerothcore-wotlk_ac-client-data`, populated once by the
+   `ac-client-data-init` service (image `acore/ac-wotlk-client-data`, a
+   prebuilt data package AzerothCore ships so a server needs no real client
+   install) and mounted read-only into the worldserver at
+   `/azerothcore/env/dist/data/` (`docker-compose.yml`'s `AC_DATA_DIR`).
+   `docker run --rm -v azerothcore-wotlk_ac-client-data:/data alpine ls
+   /data/dbc` lists 247 files. **`Talent.dbc` and `TalentTab.dbc` inside it
+   are byte-for-byte identical** to the reference 3.3.5a client install
+   (`cmp`, not just matching sizes) -- confirmed, not assumed, since a private
+   server's data package is exactly the kind of thing that could have drifted
+   from a stock client without anyone noticing. This is why merging in
+   Classic rows can be worked out entirely offline, against the reference
+   install already on disk, with no live risk until the result is actually
+   mounted in.
+
+   The mount mechanism for the merged file: Docker supports bind-mounting a
+   single file over one that already exists inside a named volume, so
+   `docker-compose.override.yml` (the same mechanism `azerothcore-wotlk`'s
+   own override already uses for SOAP) can mount a merged `Talent.dbc` at
+   `/azerothcore/env/dist/data/dbc/Talent.dbc` without disturbing the other
+   246 files the named volume still serves.
 3. **Gate by era, not by opt-in.** Hook `ProgressionState`
    (`IP_LEVEL_VANILLA = 60`, etc.) so a Classic talent is only learnable
    pre-Dark-Portal, via a packet hook ahead of the core `CMSG_LEARN_TALENT`

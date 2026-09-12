@@ -1,0 +1,6 @@
+# Never commit game assets -- same rule open-wow-client's own tree follows,
+# for the same reason: these are Blizzard's files, not ours to distribute.
+data/dbc-reference/
+*.dbc
+*.mpq
+*.MPQ
