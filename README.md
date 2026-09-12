@@ -35,11 +35,39 @@ an id present in both tables (796) works and persists normally.
 
 ## The plan, as far as it's been thought through
 
-1. **Renumber, don't merge as-is.** Some Classic talent ids collide with real,
-   different WotLK talents (id != removed, just changed) -- learning through
-   one of those would silently teach the wrong thing. Classic ids need moving
-   into a range `sTalentStore` doesn't already use before they mean anything
-   server-side.
+1. ~~Renumber, don't merge as-is.~~ **Built and live-confirmed** --
+   `open-wow-client`'s `tools/wow-cli/examples/build_talent_merge.rs`. Stock
+   WotLK rows untouched; every Classic talent not already identical to a
+   WotLK one gets a new row under its *existing* tab id (all 27 Classic tab
+   ids are a strict subset of WotLK's 33 -- same tree, same id, confirmed --
+   so no new tabs are needed and the engine's own tier-point-gating and
+   prerequisite checks apply to injected rows without modification).
+
+   Two real problems, found by testing on the live realm rather than by
+   review:
+   - **The id offset matters, not just its uniqueness.** `900,000 + classic_id`
+     seemed safe (nowhere near WotLK's own ids) but broke silently: a point
+     was spent and nothing was learned. `DBCStorage::LookupEntry` is a flat
+     array indexed by raw id, sized to `max_id + 1` at load
+     (`DBCFileLoader::AutoProduceData`) -- a 900,762-slot array for 913 real
+     rows broke something downstream. `10,000 +` works cleanly.
+   - **A talent's spell has to exist here too.** `Player::LearnTalent` never
+     checks `addTalent`'s return value, so a talent whose rank spell is not a
+     real id in this build's `Spell.dbc` still costs the player a point in
+     total silence -- an AzerothCore bug, not something fixable from this
+     side. 13 of Druid's 21 originally-planned additions hit this (the
+     *ability*, not just the talent slot, was cut between 1.12.1 and WotLK --
+     Improved Nature's Grasp among them). The tool now checks every rank's
+     spell against the real `Spell.dbc` first and skips (transitively, if
+     something depends on a skipped talent) anything that would trigger it.
+     Druid's safe set: **8 of 47**. The other 13 need `Spell.dbc` work too,
+     not attempted yet.
+
+   Live-confirmed on `Classicdruid`: id 761 (Nature's Grasp) -> 10761
+   learned, persisted across a reconnect, and correctly refused a tier-1
+   pick (10781) until 5 points were spent in the tab -- the engine's own
+   native rule, unmodified, doing exactly what it should to injected data.
+
 2. ~~Find where this server's DBC pack actually lives.~~ **Found and
    confirmed.** Not a host path at all -- a named Docker volume,
    `azerothcore-wotlk_ac-client-data`, populated once by the
@@ -74,6 +102,21 @@ an id present in both tables (796) works and persists normally.
 
 None of this is built yet. This repo exists so it has somewhere to live when
 it is.
+
+## Live state right now
+
+**The local realm's `Talent.dbc` is not stock.** `C:\azerothcore-wotlk\docker-compose.override.yml`
+bind-mounts `C:/nekocore/data/generated/Talent-druid.dbc` (Druid's 8 safe
+additions, `ID_OFFSET = 10_000`) over `/azerothcore/env/dist/data/dbc/Talent.dbc`
+inside the worldserver container. `docker compose restart ac-worldserver`
+picks up a regenerated file; removing that `volumes:` entry and restarting
+goes back to the named volume's own stock copy. `Classicdruid` (`OWC34`) has
+796 and 10761 learned and saved.
+
+`data/generated/` (gitignored -- the `.dbc` is derived from Blizzard data,
+not ours to commit) holds the current build; `data/generated/druid-mapping.csv`
+(committed) is the classic-id -> server-id table the eventual module needs at
+runtime -- an unlisted classic id means "not yet safe to merge", not "bug".
 
 ## Client-side state, for reference
 
