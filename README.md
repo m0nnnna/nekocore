@@ -129,13 +129,41 @@ separately from this build's own since the two are different tables). What it
 sends is only ever as good as what the server understands -- which, right
 now, is only what WotLK already shipped.
 
+## Building a merged `Talent.dbc`
+
+`cargo build --release` (a plain Rust binary crate, no dependencies -- see
+`src/dbc.rs`'s own doc comment for why it vendors a minimal WDBC reader/writer
+rather than depending on `open-wow-client`'s `dbc` crate). Produces
+`target/release/build-talent-merge.exe`.
+
+It needs four already-extracted flat `.dbc` files as input -- it has no MPQ
+reader of its own. Pull them out with `open-wow-client`'s `wow-cli`, or copy
+`wotlk-Talent.dbc`/`wotlk-Spell.dbc` straight out of the server's own data
+volume if there's any doubt they've drifted from stock (see
+`build_talent_merge.rs`'s own doc comment for both commands). Then:
+
+```
+build-talent-merge <classic Talent.dbc> <classic TalentTab.dbc> <wotlk Talent.dbc> <wotlk Spell.dbc> <class_mask> <out Talent.dbc> <out mapping.csv>
+```
+
+`class_mask` is the bit for one class (1=Warrior, 2=Paladin, 4=Hunter,
+8=Rogue, 16=Priest, 64=Shaman, 128=Mage, 256=Warlock, 1024=Druid -- 32 and
+512 are Death Knight and unused respectively, both out of scope for a
+Classic merge since neither existed in 1.12.1).
+
+**Verified byte-identical to `open-wow-client`'s own copy of this tool**,
+whose output is the one actually mounted and live-tested (see above) -- this
+one was built to not need that repo checked out, not to be a second,
+independently-trusted implementation.
+
 ## Layout
 
 ```
-data/sql/    -- database changes, once there are any
-src/         -- the module's C++, once there is any
-docs/        -- notes that don't belong in commit messages
+data/inputs/     -- extracted flat DBCs, gitignored (Blizzard's data)
+data/generated/  -- this tool's output; the .dbc is gitignored, the
+                    mapping .csv is not (it's ours, and the module will need
+                    it at runtime)
+data/sql/        -- database changes, once there are any
+src/             -- this repo's own tools, and the eventual C++ module
+docs/            -- notes that don't belong in commit messages
 ```
-
-Nothing under those exists yet either. This file is the plan until code
-replaces parts of it.

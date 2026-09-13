@@ -1,6 +1,12 @@
 # Never commit game assets -- same rule open-wow-client's own tree follows,
 # for the same reason: these are Blizzard's files, not ours to distribute.
 data/dbc-reference/
+data/inputs/
 *.dbc
 *.mpq
 *.MPQ
+
+# Rust build output. Cargo.lock is committed on purpose -- this is a binary,
+# not a library, and the usual Rust convention is the other way round for
+# exactly that reason.
+/target

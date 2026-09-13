@@ -1,0 +1,11 @@
+[package]
+name = "nekocore-tools"
+version = "0.1.0"
+edition = "2021"
+description = "Setup tools for the nekocore server-side custom work -- currently, building a merged Talent.dbc."
+
+[[bin]]
+name = "build-talent-merge"
+path = "src/build_talent_merge.rs"
+
+[dependencies]
