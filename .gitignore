@@ -10,3 +10,6 @@ data/inputs/
 # not a library, and the usual Rust convention is the other way round for
 # exactly that reason.
 /target
+
+__pycache__/
+*.pyc

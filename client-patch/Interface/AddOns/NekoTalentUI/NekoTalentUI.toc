@@ -1,0 +1,4 @@
+## Interface: 30300
+## Title: NekoTalentUI
+## Notes: Custom era talent frame -- renders the extra dedicated-tab era trees (build_era_tree.py) that the stock TalentFrame can't handle past 3 same-class tabs. First working slice: Druid, Vanilla era only, hardcoded tab indices.
+NekoTalentUI.lua

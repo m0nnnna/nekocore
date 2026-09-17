@@ -1,0 +1,4 @@
+## Interface: 30300
+## Title: NekoTalentDebug
+## Notes: Diagnostic-only addon -- dumps talent tab/group state to chat via /ntd. Not part of the real UI.
+NekoTalentDebug.lua

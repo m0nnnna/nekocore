@@ -1,0 +1,89 @@
+/*
+ * Era-lock enforcement for the dedicated era talent tabs build_era_tree.py
+ * builds (tools/build_patch/build_era_tree.py -- see that file's doc
+ * comment for the full tab-id allocation scheme).
+ *
+ * Without this, nothing stops a character from spending points in an era's
+ * tabs regardless of their actual mod-individual-progression state -- the
+ * custom client UI (NekoTalentUI) only controls what's easy to reach, not
+ * what's actually possible, and a determined player could still send
+ * CMSG_LEARN_TALENT directly (e.g. via a macro/addon) for any talent id
+ * whose tab exists in the client's Talent.dbc, regardless of era.
+ *
+ * Hook point: ServerScript::CanPacketReceive, which AzerothCore calls
+ * BEFORE the opcode's real handler runs (WorldSession.cpp) -- confirmed by
+ * reading the actual call sites, not assumed. The packet object passed in
+ * is documented (ServerScript.h) as a COPY of the original, so reading it
+ * here doesn't disturb what HandleLearnTalentOpcode reads afterward -- no
+ * rpos() save/restore needed, unlike a typical packet-peek pattern.
+ * Current core's signature takes it as `WorldPacket const&` (changed at
+ * some point after this repo's original core reference -- confirmed
+ * against this exact checkout's ServerScript.h, not assumed), so reading
+ * still needs a local mutable copy first (operator>> mutates read position).
+ *
+ * No core patch needed for this feature: this hook already exists in
+ * stock AzerothCore, exactly as nekocore's own original README predicted
+ * ("AzerothCore supports this without patching core source -- confirm the
+ * exact hook point against its source before relying on it") before this
+ * was actually verified against the real source.
+ */
+
+#include "ScriptMgr.h"
+#include "Player.h"
+#include "WorldSession.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
+#include "DBCStores.h"
+#include "Chat.h"
+#include "Language.h"
+
+#include "IndividualProgression.h"
+
+namespace
+{
+    // Dedicated era-tab id ranges -- must stay in sync with
+    // tools/build_patch/build_era_tree.py's new_tab_id() allocation
+    // (9000 + class_id*10 + tree_index for Vanilla; TBC would need its own
+    // reserved range here once that era is built).
+    constexpr uint32 VANILLA_TAB_ID_MIN = 9000;
+    constexpr uint32 VANILLA_TAB_ID_MAX = 9999;
+}
+
+class EraTalentGate : public ServerScript
+{
+public:
+    EraTalentGate() : ServerScript("EraTalentGate") { }
+
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
+    {
+        if (packet.GetOpcode() != CMSG_LEARN_TALENT)
+            return true;
+
+        Player* player = session ? session->GetPlayer() : nullptr;
+        if (!player)
+            return true;
+
+        WorldPacket local(packet); // operator>> mutates read position -- can't read from a const&
+        uint32 talentId, requestedRank;
+        local >> talentId >> requestedRank;
+
+        TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
+        if (!talentInfo)
+            return true; // unknown id -- let the real handler's own validation reject it
+
+        if (talentInfo->TalentTab < VANILLA_TAB_ID_MIN || talentInfo->TalentTab > VANILLA_TAB_ID_MAX)
+            return true; // not one of our era tabs, nothing to gate
+
+        if (sIndividualProgression->isBeforeProgression(player, PROGRESSION_PRE_TBC))
+            return true; // still Vanilla-era per their own progression -- allowed
+
+        ChatHandler(session).PSendSysMessage(
+            "|cffff0000[Era Talents]|r That talent belongs to the Vanilla era -- your character has already progressed past it.");
+        return false;
+    }
+};
+
+void AddSC_era_talent_gate()
+{
+    new EraTalentGate();
+}
