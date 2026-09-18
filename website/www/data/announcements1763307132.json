@@ -1,0 +1,5 @@
+{
+    "title": "Phase 1+BWL",
+    "body": "I've been able to say with all the latest changes phase 1 is complete. BWL has been completely balanced as well.\r\nI was able to complete and do all BWL boss's on a rogue.\r\ngit commit:https:\/\/github.com\/m0nnnna\/wow\/commit\/0e48026d14ae30ed9c82671f004a489c34633646\r\nmain points of interest:\r\n-Removed Nef mind control - Was causing resets during ad phase when solo.\r\n-Lowered Nef ads from 40 > 10\r\n-Lowered egg count from 30 > 10\r\n-Removed surpression room effect entirely\r\n-Removed stun effect from chromaggus\r\n-Balance changes for each BWL boss complete\r\n-Lowered health, DPS, CC, and some minor armor value changes\r\n-Buff Lifeward from 5.45% chance to 25% chance\r\n-Buff Lifeward from 309 heal to 610 heal\r\n-Removed custom module Dungeonrespawn due to issues in prod\r\n\r\nAs always please submit any issues to help@nekos.farm",
+    "timestamp": 1763307132
+}

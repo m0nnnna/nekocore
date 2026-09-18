@@ -13,3 +13,13 @@ data/inputs/
 
 __pycache__/
 *.pyc
+
+# Live credentials for the website (DB passwords, RA/GM console login).
+# These files exist locally for the deployed site but must never be
+# committed, even by an accidental `git add -A`.
+website/db_connect.php
+website/db_connect_auth.php
+website/db_connect_chars.php
+website/db_connect_world.php
+website/ra_config.php
+website/mail_config.php

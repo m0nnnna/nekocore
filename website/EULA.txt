@@ -1,0 +1,136 @@
+End User License Agreement (EULA)
+
+Last updated: June 16, 2025
+
+This End User License Agreement ("Agreement") is a legal agreement between you ("Licensee") and Laragon ("Licensor"), governing your use of the software known as Laragon ("Software").
+
+By installing, using, or accessing Laragon, you agree to be bound by the terms of this Agreement.
+
+1. License Grant
+
+Subject to the terms of this Agreement and your selected license type, the Licensor grants you a limited, non-exclusive, non-transferable license to install and use the Software on supported devices.
+
+2. Definitions
+2.1 Commercial Use
+
+"Commercial Use" means any use of the Software for or in connection with commercial advantage or monetary compensation. This includes, but is not limited to:
+
+    Creating or deploying client projects such as websites or applications for payment.
+    Use within a business, organization, legal entity, or any entity that generates revenue.
+    Offering services that include or utilize the Software in any way for financial benefit.
+    Running the Software on servers (e.g., web servers, cloud instances, production environments) that serve revenue-generating websites, apps, or services.
+
+2.2 Non-Commercial Use
+
+"Non-Commercial Use" refers to using the Software without the intention of commercial gain, monetary compensation, or other benefits. Permissible scenarios include:
+
+    Personal use for learning, experimentation, or testing.
+    Development or testing of open-source software or projects.
+    Use by individuals not affiliated with an organization or entity that earns income or charges fees.
+    Ensuring that any work produced is not sold, leased, sublicensed, or monetized in any manner.
+
+3. License Types
+3.1 Unlicensed Use (Free Tier)
+
+    Use Case: Non-commercial use only
+    License: Limited free use, no paid license required
+    Conditions:
+        Laragon may display reminders or pop-ups encouraging license purchase.
+        No official support or guaranteed updates are provided.
+    Restrictions:
+        Commercial use is strictly prohibited.
+        You may not remove, bypass, or tamper with licensing or activation messages.
+
+3.2 Non-Commercial Standard License
+
+    Use Case: Non-commercial use only
+    License: Perpetual
+    Updates: 12 months of free updates (including major version releases)
+    Post-Update Rights: Continue using the last version obtained indefinitely
+
+3.3 Non-Commercial Extended License
+
+    Use Case: Non-commercial use only
+    License: Perpetual
+    Updates: 60 months of free updates (including major version releases)
+    Post-Update Rights: Continue using the last version obtained indefinitely
+
+3.4 Annual Commercial License
+
+    Use Case: Commercial use
+    License: Annual (valid for 12 months from purchase date)
+    Updates: 12 months of free updates (including major version releases)
+    Renewal: Required to continue using and receiving updates after expiration
+
+3.5 Lifetime Commercial License
+
+    Use Case: Commercial use
+    License: Perpetual
+    Updates: 60 months of free updates (including major version releases)
+    Post-Update Rights: Continue using the last version obtained indefinitely
+
+3.6 Team Annual Commercial License
+
+    Use Case: Commercial use for teams or organizations
+    License: Annual (valid for 12 months from purchase date)
+    Updates: 12 months of free updates (including major version releases)
+    Renewal: Required to continue using and receiving updates after expiration
+	
+3.7 Team Lifetime Commercial License
+
+	Use Case: Commercial use for teams or organizations
+	License: Perpetual
+	Updates: 60 months of free updates (including major version releases)
+	Post-Update Rights: Continue using the last version obtained indefinitely
+	
+3.8 Non-Commercial Education license
+	Use Case: Non-Commercial educational purposes only
+	License: Perpetual
+	Updates: 60 months of free updates (including major version releases)
+	Post-Update Rights: Continue using the last version obtained indefinitely
+
+4. License Restrictions
+
+    Reverse engineer, decompile, or attempt to access the source code.
+    Sell, sublicense, rent, lease, or redistribute the Software without written permission.
+    Share license keys or access credentials with others.
+    Use the Software in violation of any applicable laws.
+
+5. License Delivery and Tax Compliance
+
+Licenses, billing, and tax compliance are managed by Lemon Squeezy, Inc., our official Merchant of Record. They handle:
+
+    Secure checkout and payment processing
+    License key delivery and customer account services
+    VAT and tax compliance
+    Access to self-service invoicing, including downloadable invoices and order management.
+
+See Lemon Squeezy Terms of Service, Privacy Policy and Generate Invoice for more details.
+
+5.1 Refund Policy
+
+Refunds and returns related to the purchase of Laragon licenses are governed by our separate Refund Policy. Please review it carefully before completing your purchase.
+
+6. Intellectual Property
+
+All rights, title, and interest in and to the Software remain the exclusive property of the Licensor. This Agreement grants no ownership rights-only a limited license.
+
+7. Termination
+
+Your license terminates automatically if you breach this Agreement. Upon termination, you must cease all use and delete all copies of the Software.
+
+8. Disclaimer of Warranty
+
+The Software is provided “as is,” without warranties of any kind. The Licensor disclaims all implied warranties, including merchantability and fitness for a particular purpose.
+
+9. Limitation of Liability
+
+To the maximum extent permitted by law, the Licensor shall not be liable for any indirect, incidental, or consequential damages, including lost data or profits, arising from the use or inability to use the Software.
+
+10. Governing Law
+
+This Agreement is governed by applicable international law and please note that your use of the Software may also be subject to local, national, or regional laws depending on where you reside or operate. We encourage you to ensure compliance with any applicable legal requirements in your location.
+
+11. Entire Agreement
+
+This Agreement constitutes the entire legal agreement between you and the Licensor regarding Laragon and supersedes any prior agreements or understandings.
