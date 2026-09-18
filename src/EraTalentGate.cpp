@@ -42,11 +42,12 @@
 namespace
 {
     // Dedicated era-tab id ranges -- must stay in sync with
-    // tools/build_patch/build_era_tree.py's new_tab_id() allocation
-    // (9000 + class_id*10 + tree_index for Vanilla; TBC would need its own
-    // reserved range here once that era is built).
+    // tools/build_patch/build_era_tree.py's ERA_CONFIG (tab_base 9000/8000
+    // + class_id*10 + tree_index for Vanilla/TBC respectively).
     constexpr uint32 VANILLA_TAB_ID_MIN = 9000;
     constexpr uint32 VANILLA_TAB_ID_MAX = 9999;
+    constexpr uint32 TBC_TAB_ID_MIN = 8000;
+    constexpr uint32 TBC_TAB_ID_MAX = 8999;
 }
 
 class EraTalentGate : public ServerScript
@@ -71,15 +72,35 @@ public:
         if (!talentInfo)
             return true; // unknown id -- let the real handler's own validation reject it
 
-        if (talentInfo->TalentTab < VANILLA_TAB_ID_MIN || talentInfo->TalentTab > VANILLA_TAB_ID_MAX)
-            return true; // not one of our era tabs, nothing to gate
+        if (talentInfo->TalentTab >= VANILLA_TAB_ID_MIN && talentInfo->TalentTab <= VANILLA_TAB_ID_MAX)
+        {
+            if (sIndividualProgression->isBeforeProgression(player, PROGRESSION_PRE_TBC))
+                return true; // still Vanilla-era per their own progression -- allowed
 
-        if (sIndividualProgression->isBeforeProgression(player, PROGRESSION_PRE_TBC))
-            return true; // still Vanilla-era per their own progression -- allowed
+            ChatHandler(session).PSendSysMessage(
+                "|cffff0000[Era Talents]|r That talent belongs to the Vanilla era -- your character has already progressed past it.");
+            return false;
+        }
 
-        ChatHandler(session).PSendSysMessage(
-            "|cffff0000[Era Talents]|r That talent belongs to the Vanilla era -- your character has already progressed past it.");
-        return false;
+        if (talentInfo->TalentTab >= TBC_TAB_ID_MIN && talentInfo->TalentTab <= TBC_TAB_ID_MAX)
+        {
+            // TBC talents are only learnable during the TBC window: after
+            // leaving Vanilla (PRE_TBC reached) and before reaching WotLK
+            // content (TBC_TIER_5 -- "WotLK Naxx/EoE/OS", the point that
+            // ends the TBC tier progression per the module's own enum
+            // comments). Same reasoning as the Vanilla gate above, just
+            // bounded on both sides instead of one.
+            bool inTbcWindow = sIndividualProgression->hasPassedProgression(player, PROGRESSION_PRE_TBC)
+                && sIndividualProgression->isBeforeProgression(player, PROGRESSION_TBC_TIER_5);
+            if (inTbcWindow)
+                return true;
+
+            ChatHandler(session).PSendSysMessage(
+                "|cffff0000[Era Talents]|r That talent belongs to the TBC era -- it's not available to your character right now.");
+            return false;
+        }
+
+        return true; // not one of our era tabs, nothing to gate
     }
 };
 

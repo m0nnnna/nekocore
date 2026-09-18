@@ -21,15 +21,23 @@ distribute. Each user runs this script themselves, against their own
 legally-owned client copy, the same way open-wow-client's tooling expects.
 
 Usage:
-    # Full rebuild (needs your own 1.12.1 client for source talent data)
+    # Full rebuild, both eras (needs your own 1.12.1 and/or 2.4.3 clients
+    # for source talent data -- pass whichever era roots you want in the
+    # output; omitting one drops that era from this run's output, same as
+    # build_era_tree.py itself)
     python install_client.py --wotlk-root "D:\\...\\3.3.5a" \\
-        --source-root "D:\\...\\1.12.1" --build
+        --vanilla-root "D:\\...\\1.12.1" --tbc-root "D:\\...\\2.4.3" --build
 
     # Redeploy already-built data/generated/*.dbc + the addons, no rebuild
     python install_client.py --wotlk-root "D:\\...\\3.3.5a"
 
     # Addons only (fast path for iterating on Lua without touching DBCs)
     python install_client.py --wotlk-root "D:\\...\\3.3.5a" --addons-only
+
+    # Also fold in mod-individual-progression's optional Spell.dbc/skill DBCs
+    # (needs 7z on PATH; --progression-variant V|S picks the mana-cost variant)
+    python install_client.py --wotlk-root "D:\\...\\3.3.5a" \\
+        --progression-module-root "D:\\AzerothCore\\modules\\mod-individual-progression"
 """
 from __future__ import annotations
 
@@ -51,22 +59,69 @@ ALL_CLASSES = [
 GENERATED_DIR = REPO_ROOT / "data" / "generated"
 STAGED_MPQ = REPO_ROOT / "client-patch" / "patch-nekocore-talents.mpq"
 ADDONS_DIR = REPO_ROOT / "client-patch" / "Interface" / "AddOns"
+PROGRESSION_STAGE_DIR = REPO_ROOT / "client-patch" / "progression-optional"
+
+# mod-individual-progression's optional/ ships these server-only DBCs in
+# dbc.7z (unconditional) plus Spell.dbc in patch-V.7z/patch-S.7z (mutually
+# exclusive mana-cost variants -- see that module's optional/patch-
+# explanations.txt). All 5 need both a server-side data/dbc mount (see
+# docker-compose.override.yml) AND, for Spell.dbc specifically, a place in
+# our own client MPQ -- deliberately NOT the module's own patch-V.mpq/
+# patch-S.mpq, which collide with unrelated same-named files already on
+# the test client (confirmed by hash: different file, different origin).
+PROGRESSION_DBC_ARCHIVE = "dbc.7z"
+PROGRESSION_DBC_FILES = [
+    "SkillLine.dbc", "SkillLineAbility.dbc", "SkillRaceClassInfo.dbc", "SpellItemEnchantment.dbc",
+]
+PROGRESSION_SPELL_ARCHIVE = {"V": "patch-V.7z", "S": "patch-S.7z"}
 
 
-def build_dbcs(source_root: Path, wotlk_root: Path, classes: list[str]) -> None:
+def build_dbcs(vanilla_root: Path | None, tbc_root: Path | None, wotlk_root: Path, classes: list[str]) -> None:
     cmd = [
         sys.executable,
         str(REPO_ROOT / "tools" / "build_patch" / "build_era_tree.py"),
-        "--source-build", "1.12.1",
-        "--source-root", str(source_root),
         "--wotlk-root", str(wotlk_root),
         "--out-dbc-dir", str(GENERATED_DIR),
         "--out-mapping-dir", str(REPO_ROOT / "data" / "vanilla"),
     ]
+    if vanilla_root:
+        cmd += ["--vanilla-root", str(vanilla_root)]
+    if tbc_root:
+        cmd += ["--tbc-root", str(tbc_root)]
     for cls in classes:
         cmd += ["--class", cls]
     print("+ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
+
+
+def extract_progression_dbcs(module_root: Path, variant: str) -> None:
+    """Pulls the server-only DBCs + the chosen Spell.dbc mana-cost variant
+    straight out of mod-individual-progression's own optional/*.7z archives
+    into PROGRESSION_STAGE_DIR -- no separate copy of this data maintained
+    in this repo, the module's own archives stay the source of truth."""
+    if shutil.which("7z") is None:
+        raise SystemExit(
+            "7z not found on PATH -- install 7-Zip (the module's own optional/ "
+            "archives are .7z, same tool needed to extract them by hand)."
+        )
+
+    optional_dir = module_root / "optional"
+    dbc_archive = optional_dir / PROGRESSION_DBC_ARCHIVE
+    spell_archive = optional_dir / PROGRESSION_SPELL_ARCHIVE[variant]
+    for archive in (dbc_archive, spell_archive):
+        if not archive.exists():
+            raise SystemExit(f"Missing {archive} -- is --progression-module-root correct?")
+
+    PROGRESSION_STAGE_DIR.mkdir(parents=True, exist_ok=True)
+    for archive, wanted in [(dbc_archive, PROGRESSION_DBC_FILES), (spell_archive, ["Spell.dbc"])]:
+        cmd = ["7z", "e", "-y", f"-o{PROGRESSION_STAGE_DIR}", str(archive), *wanted]
+        print("+ " + " ".join(cmd))
+        subprocess.run(cmd, check=True, capture_output=True)
+
+    for name in [*PROGRESSION_DBC_FILES, "Spell.dbc"]:
+        if not (PROGRESSION_STAGE_DIR / name).exists():
+            raise SystemExit(f"Extraction didn't produce {name} -- check the archive still contains it.")
+    print(f"Staged progression DBCs (variant {variant}) -> {PROGRESSION_STAGE_DIR}")
 
 
 def package_mpq() -> None:
@@ -75,13 +130,20 @@ def package_mpq() -> None:
     if not talent.exists() or not talent_tab.exists():
         raise SystemExit(
             f"Missing {talent} / {talent_tab} -- run with --build first "
-            "(needs a 1.12.1 client root via --source-root)."
+            "(needs --vanilla-root and/or --tbc-root)."
         )
-    write_archive(STAGED_MPQ, {
+    files = {
         "DBFilesClient\\Talent.dbc": talent.read_bytes(),
         "DBFilesClient\\TalentTab.dbc": talent_tab.read_bytes(),
-    })
-    print(f"Packaged {STAGED_MPQ} ({STAGED_MPQ.stat().st_size:,} bytes)")
+    }
+    if PROGRESSION_STAGE_DIR.is_dir():
+        spell = PROGRESSION_STAGE_DIR / "Spell.dbc"
+        if spell.exists():
+            files["DBFilesClient\\Spell.dbc"] = spell.read_bytes()
+            print("Including progression Spell.dbc in the client MPQ "
+                  "(server-only DBCs -- SkillLine etc. -- don't need a client copy)")
+    write_archive(STAGED_MPQ, files)
+    print(f"Packaged {STAGED_MPQ} ({STAGED_MPQ.stat().st_size:,} bytes, {len(files)} files)")
 
 
 def deploy_mpq(wotlk_root: Path, mpq_name: str) -> None:
@@ -110,11 +172,18 @@ def deploy_addons(wotlk_root: Path) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--wotlk-root", required=True, type=Path, help="the client install to patch")
-    ap.add_argument("--source-root", type=Path, help="1.12.1 client root (required with --build)")
+    ap.add_argument("--vanilla-root", type=Path, help="1.12.1 client root (for --build; omit to leave Vanilla out)")
+    ap.add_argument("--tbc-root", type=Path, help="2.4.3 client root (for --build; omit to leave TBC out)")
     ap.add_argument("--class", dest="classes", action="append", choices=ALL_CLASSES,
                      help="repeat to build a subset; default is all 9 eligible classes")
     ap.add_argument("--build", action="store_true", help="regenerate data/generated/*.dbc before packaging")
     ap.add_argument("--addons-only", action="store_true", help="skip DBC build/package/deploy entirely")
+    ap.add_argument("--progression-module-root", type=Path,
+                     help="mod-individual-progression checkout root (e.g. D:\\AzerothCore\\modules\\"
+                          "mod-individual-progression) -- re-extracts its optional/ DBCs into the MPQ. "
+                          "Omit to reuse whatever was staged by a previous run, if any.")
+    ap.add_argument("--progression-variant", choices=["V", "S"], default="V",
+                     help="mana-cost Spell.dbc variant: V = era-authentic lower costs, S = keep WotLK costs (default V)")
     args = ap.parse_args()
 
     if not args.wotlk_root.is_dir():
@@ -123,9 +192,11 @@ def main() -> int:
     if not args.addons_only:
         classes = args.classes or ALL_CLASSES
         if args.build:
-            if not args.source_root:
-                raise SystemExit("--build requires --source-root (your 1.12.1 client)")
-            build_dbcs(args.source_root, args.wotlk_root, classes)
+            if not args.vanilla_root and not args.tbc_root:
+                raise SystemExit("--build requires --vanilla-root and/or --tbc-root")
+            build_dbcs(args.vanilla_root, args.tbc_root, args.wotlk_root, classes)
+        if args.progression_module_root:
+            extract_progression_dbcs(args.progression_module_root, args.progression_variant)
         package_mpq()
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 

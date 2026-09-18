@@ -19,13 +19,15 @@ the display, so all the real validation (tier gating, prereqs,
 CMSG_LEARN_TALENT round-trip) is exactly as authoritative as the stock
 frame's.
 
-v1 scope, deliberately small: one class (Druid), one era (Vanilla, tabs
-4-6 -- the first era block after the 3 stock tabs every class always has).
-No branch/prereq arrow textures (cosmetic, skipped for now). No era
-selector (only one era is built/deployed right now). Extending to more
-classes/eras later just means generalizing ERA_TAB_START's assumption
-("stock is always tabs 1-3, era blocks stack after that in groups of 3")
-rather than restructuring anything.
+Now covers all 3 eras (stock WotLK tabs 1-3, Vanilla 4-6, TBC 7-9 --
+build_era_tree.py's ERA_ORDER fixes that index layout) and picks which
+block to show automatically: DetectEra() reads the same two hidden
+progression quest ids EraProgressionSync.cpp (server side) keys off
+(IsQuestFlaggedCompleted is plain client Lua, no server round-trip needed)
+and SetEra() repoints the frame at that block's 3 tabs -- N always opens
+whichever era the character is actually in right now, no manual era
+picker needed. No branch/prereq arrow textures (cosmetic, skipped for
+now).
 
 Confirmed API facts (read directly from this client's own
 Interface\FrameXML\TalentFrameBase.lua, not guessed):
@@ -37,7 +39,6 @@ Interface\FrameXML\TalentFrameBase.lua, not guessed):
   (tier - 1) * PLAYER_TALENTS_PER_TIER <= pointsSpentInThisTab
 ]]
 
-local ERA_TAB_START = 4
 local ERA_TAB_COUNT = 3
 local GRID_COLS = 4
 local CELL_SIZE = 38
@@ -52,14 +53,25 @@ local TAB_WIDTH = 108
 local TAB_HEIGHT = 24
 local TAB_GAP = 8
 
+-- mod-individual-progression tracks a character's era entirely via these
+-- two hidden quest ids being rewarded (66000 + ProgressionState, see
+-- IndividualProgression.cpp / this repo's EraProgressionSync.cpp doc
+-- comment) -- IsQuestFlaggedCompleted lets client Lua read that same state
+-- directly, no server messaging needed. Tab index ranges must stay in sync
+-- with build_era_tree.py's ERA_ORDER (stock 1-3, Vanilla 4-6, TBC 7-9).
+local PRE_TBC_QUEST = 66008
+local TBC_TIER_5_QUEST = 66013
+
 local frame
 local tabButtons = {}
 local talentButtons = {}
 local gridLines = {}
 local selectedLocalTab = 1
+local currentEraTabStart = 4
+local currentEraLabel = "Vanilla"
 
 local function ActualTabIndex()
-	return ERA_TAB_START + selectedLocalTab - 1
+	return currentEraTabStart + selectedLocalTab - 1
 end
 
 local function TalentGroup()
@@ -231,10 +243,34 @@ local function CreateUI()
 		local b = CreateFrame("Button", "NekoTalentUITab"..i, frame, "UIPanelButtonTemplate")
 		b:SetSize(TAB_WIDTH, TAB_HEIGHT)
 		b:SetPoint("TOPLEFT", tabStartX + (i - 1) * (TAB_WIDTH + TAB_GAP), -62)
-		local ok, name = pcall(GetTalentTabInfo, ERA_TAB_START + i - 1)
-		b:SetText((ok and name) or ("Tab " .. i))
 		b:SetScript("OnClick", function() SelectLocalTab(i) end)
 		tabButtons[i] = b
+	end
+end
+
+local function QuestDone(id)
+	local ok, done = pcall(IsQuestFlaggedCompleted, id)
+	return ok and done
+end
+
+local function DetectEra()
+	if not QuestDone(PRE_TBC_QUEST) then
+		return 4, "Vanilla"
+	elseif not QuestDone(TBC_TIER_5_QUEST) then
+		return 7, "TBC"
+	else
+		return 1, "WotLK"
+	end
+end
+
+local function SetEra(tabStart, label)
+	currentEraTabStart = tabStart
+	currentEraLabel = label
+	selectedLocalTab = 1
+	frame.titleBar:SetText("Era Talents (" .. label .. ")")
+	for i, b in ipairs(tabButtons) do
+		local ok, name = pcall(GetTalentTabInfo, tabStart + i - 1)
+		b:SetText((ok and name) or ("Tab " .. i))
 	end
 end
 
@@ -245,6 +281,7 @@ local function Toggle()
 	if frame:IsShown() then
 		frame:Hide()
 	else
+		SetEra(DetectEra())
 		frame:Show()
 		SelectLocalTab(selectedLocalTab)
 	end

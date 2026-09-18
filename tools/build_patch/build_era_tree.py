@@ -1,6 +1,21 @@
 """
-Builds a full, authentic era talent tree for one class under BRAND NEW
-TalentTab.dbc/Talent.dbc ids -- not merged into WotLK's existing 3 tabs.
+Builds full, authentic era talent trees under BRAND NEW TalentTab.dbc/
+Talent.dbc ids -- not merged into WotLK's existing 3 tabs. Supports two
+source eras now, each under its own dedicated id range so they can coexist
+in the same output DBCs without collision:
+
+    era     source build   tab ids               talent ids
+    Vanilla 1.12.1         9000 + class_id*10+n   classic_id + 10_000
+    TBC     2.4.3          8000 + class_id*10+n   classic_id + 20_000
+
+(n = 0,1,2, the tree's position among that class's 3 tabs.) Both ranges sit
+comfortably above WotLK's own max ids (tab 411, talent ~2300) and don't
+overlap each other, so a class can have all three eras' full trees loaded
+at once: 3 stock WotLK tabs, then 3 Vanilla tabs, then 3 TBC tabs -- always
+in that fixed order (see ERA_ORDER below), so a class's tab INDEX (as the
+client's own GetNumTalentTabs/GetTalentTabInfo report it, which is which
+NekoTalentUI keys off) is stable regardless of which --*-root flags a given
+run passes: tabs 1-3 stock, 4-6 Vanilla (if built), 7-9 TBC (if built).
 
 This supersedes the earlier additive approach (merge_talents.py in this
 repo's git history / wow-client-patch): reusing WotLK's existing tabs can,
@@ -8,9 +23,9 @@ at best, sprinkle a few old talents into an otherwise-WotLK tree, because
 Talent.dbc is one static file shared by every character -- there's no way
 for the stock client to show a DIFFERENT tree to a Vanilla-era character
 than a WotLK-era one from the SAME tab id. Full per-character authentic
-recreation needs the era's tree to live at its OWN tab ids, which a custom
-Lua UI (not built yet -- see docs/plan) then chooses whether to display
-based on the character's actual era (from mod-individual-progression).
+recreation needs each era's tree to live at its OWN tab ids, which
+NekoTalentUI then chooses whether to display based on the character's
+actual era (from mod-individual-progression's rewarded-quest state).
 
 Because each era gets dedicated tab ids, this tool does NOT need the
 collision-avoidance/relocation logic merge_talents.py needed (no existing
@@ -23,8 +38,6 @@ Still applies, same as before (see merge_talents.py's doc comment for why):
   - A talent is only included if every rank's spell id already exists in
     WotLK's Spell.dbc (skipped transitively otherwise) -- porting the
     missing spells into Spell.dbc is real, separate follow-on work.
-  - New Talent.dbc row ids are classic_id + ID_OFFSET (10_000) -- proven
-    safe against AzerothCore's DBCStorage::LookupEntry array sizing.
   - Talent.dbc rows for one tab must be one contiguous, (tier,column)-sorted
     block in the file, or the retail client's talent frame fails to render
     that tab at all -- live-confirmed this session. Since we're
@@ -32,18 +45,20 @@ Still applies, same as before (see merge_talents.py's doc comment for why):
     existing one), this tool builds it pre-sorted and inserts it as a whole
     block in one place.
 
-New TalentTab.dbc rows use the CLASSIC tab's own name/icon/racemask/
-background (not WotLK's) -- full authenticity, not a reskinned WotLK tab.
-New tab ids: 9000 + class_id*10 + tree_index (0,1,2) -- comfortably above
-WotLK's own max TalentTab id (411, confirmed against the real client).
+New TalentTab.dbc rows use the SOURCE era's own name/icon/racemask (WotLK's
+own all-races mask, not the source era's -- see the live Blood Elf/Draenei
+bug this fixed)/background -- full authenticity, not a reskinned WotLK tab.
 
-Usage (repeat --class to do several in one run -- REQUIRED to add more
-classes without losing ones already built: this tool reads stock WotLK
-Talent.dbc/TalentTab.dbc fresh from the client each run and writes a
-complete replacement output, it does NOT read back its own prior output
-and add to it):
-    python build_era_tree.py --source-build 1.12.1 --source-root "D:\\...\\1.12.1" \\
-        --wotlk-root "D:\\...\\3.3.5a" --class druid --class warrior --class mage \\
+Usage (repeat --class to do several in one run; pass whichever of
+--vanilla-root/--tbc-root you want represented -- REQUIRED every run to keep
+what you want without losing it: this tool reads everything fresh from the
+client(s) each run and writes a COMPLETE REPLACEMENT output, it does NOT
+read back its own prior output and add to it. Want both eras in the file?
+Pass both roots every time, same as you'd repeat every --class every time):
+    python build_era_tree.py \\
+        --wotlk-root "D:\\...\\3.3.5a" \\
+        --vanilla-root "D:\\...\\1.12.1" --tbc-root "D:\\...\\2.4.3" \\
+        --class druid --class warrior --class mage \\
         --out-dbc-dir out/ --out-mapping-dir out/
 """
 from __future__ import annotations
@@ -67,9 +82,7 @@ from wdbc import (  # noqa: E402
 from schemas import BUILD_SCHEMAS  # noqa: E402
 import mpq_source  # noqa: E402
 
-ID_OFFSET = 10_000
 N_RANKS_COMPARED = 5
-
 RANK_FIELDS = [f"SpellRank_{i}" for i in range(N_RANKS_COMPARED)]
 
 CLASSES = {
@@ -77,6 +90,14 @@ CLASSES = {
     "shaman": 7, "mage": 8, "warlock": 9, "druid": 11,
 }
 CLASS_MASKS = {slug: 1 << (cid - 1) for slug, cid in CLASSES.items()}
+
+# Fixed processing order -- controls tab INDEX stability (see module doc
+# comment). "root_arg" is the argparse dest holding that era's client root.
+ERA_ORDER = ["1.12.1", "2.4.3"]
+ERA_CONFIG = {
+    "1.12.1": {"label": "Vanilla", "tab_base": 9000, "id_offset": 10_000, "root_arg": "vanilla_root"},
+    "2.4.3":  {"label": "TBC",     "tab_base": 8000, "id_offset": 20_000, "root_arg": "tbc_root"},
+}
 
 
 def load(build: str, filename: str, root: Path, tmp_dir: Path):
@@ -92,13 +113,14 @@ def ranks_of(row: dict) -> tuple[int, ...]:
     return tuple(row[f] for f in RANK_FIELDS)
 
 
-def new_tab_id(class_id: int, tree_index: int) -> int:
-    return 9000 + class_id * 10 + tree_index
+def new_tab_id(era: str, class_id: int, tree_index: int) -> int:
+    return ERA_CONFIG[era]["tab_base"] + class_id * 10 + tree_index
 
 
 def build_one_class(
     class_slug: str,
     *,
+    era: str,
     src_talents,
     src_tabs,
     wotlk_spell_ids: set[int],
@@ -107,9 +129,14 @@ def build_one_class(
     locale_count: int,
     mapping: dict[int, int],
 ):
-    """Builds one class's new tab/talent rows. `mapping` (classic talent id
-    -> new id) and `tab_string_builder` are shared/mutated across classes by
-    the caller so a multi-class run produces one consistent output."""
+    """Builds one class's new tab/talent rows for one era. `mapping`
+    (classic talent id -> new id) and `tab_string_builder` are shared/
+    mutated across classes WITHIN one era by the caller so a multi-class run
+    produces one consistent output -- but must be a FRESH dict per era (raw
+    classic ids from two different client builds aren't the same namespace;
+    reusing one dict across eras would let a TBC id silently clobber a
+    same-numbered Vanilla id's mapping entry)."""
+    id_offset = ERA_CONFIG[era]["id_offset"]
     class_id = CLASSES[class_slug]
     class_mask = CLASS_MASKS[class_slug]
 
@@ -125,9 +152,9 @@ def build_one_class(
 
     for tree_index, tab in enumerate(class_tabs):
         old_tab_id = tab["ID"]
-        assigned_tab_id = new_tab_id(class_id, tree_index)
+        assigned_tab_id = new_tab_id(era, class_id, tree_index)
         tab_id_map[old_tab_id] = assigned_tab_id
-        print(f"tab '{tab['Name_lang']['enUS']}' ({old_tab_id}) -> new tab id {assigned_tab_id}")
+        print(f"[{ERA_CONFIG[era]['label']}] tab '{tab['Name_lang']['enUS']}' ({old_tab_id}) -> new tab id {assigned_tab_id}")
 
         new_tab_row = {f.name: 0 for f in BUILD_SCHEMAS["3.3.5a"]["TalentTab.dbc"]}
         new_tab_row["ID"] = assigned_tab_id
@@ -137,14 +164,13 @@ def build_one_class(
         # values into the output's (WotLK TalentTab.dbc's) string block.
         new_tab_row["Name_lang"] = new_loc_string(tab_string_builder, tab["Name_lang"]["enUS"], locale_count)
         new_tab_row["SpellIconID"] = tab["SpellIconID"]
-        # NOT tab["RaceMask"] -- that's the CLASSIC-era mask, which has zero
-        # bits for any race added after 1.12.1 (Blood Elf, Draenei). Live
-        # bug: a Blood Elf Rogue saw 3 tabs instead of 6 because our new
-        # tabs excluded their race, while Druid/Priest testers happened to
-        # be on races that already existed in Classic and never noticed.
-        # Race eligibility for the CLASS itself is already enforced at
-        # character creation -- this tab shouldn't additionally restrict by
-        # race at all, so use WotLK's own (all-races) mask for this class.
+        # NOT tab["RaceMask"] -- that's the SOURCE era's mask, which has
+        # zero bits for any race added after that era (Blood Elf, Draenei
+        # for Vanilla). Live bug: a Blood Elf Rogue saw 3 tabs instead of 6
+        # because our new tabs excluded their race. Race eligibility for the
+        # CLASS itself is already enforced at character creation -- the
+        # tab itself shouldn't additionally restrict by race, so use
+        # WotLK's own (all-races) mask for this class instead.
         new_tab_row["RaceMask"] = wotlk_class_racemask[class_slug]
         new_tab_row["ClassMask"] = class_mask
         new_tab_row["CategoryEnumID"] = 0
@@ -168,7 +194,7 @@ def build_one_class(
                 unsafe_ids.add(rid)
                 continue
             included.append(row)
-            mapping[rid] = rid + ID_OFFSET
+            mapping[rid] = rid + id_offset
 
         changed = True
         while changed:
@@ -217,9 +243,9 @@ def build_one_class(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--source-build", required=True, choices=["1.12.1", "2.4.3"])
-    ap.add_argument("--source-root", required=True, type=Path)
     ap.add_argument("--wotlk-root", required=True, type=Path)
+    ap.add_argument("--vanilla-root", type=Path, help="1.12.1 client root -- omit to leave Vanilla out of this run's output")
+    ap.add_argument("--tbc-root", type=Path, help="2.4.3 client root -- omit to leave TBC out of this run's output")
     ap.add_argument(
         "--class", dest="classes", action="append", required=True, choices=sorted(CLASSES),
         help="repeatable -- all classes given in ONE run land in the same output file",
@@ -228,13 +254,20 @@ def main() -> int:
     ap.add_argument("--out-mapping-dir", required=True, type=Path)
     args = ap.parse_args()
 
+    era_roots = {"1.12.1": args.vanilla_root, "2.4.3": args.tbc_root}
+    active_eras = [e for e in ERA_ORDER if era_roots[e]]
+    if not active_eras:
+        raise SystemExit("pass at least one of --vanilla-root / --tbc-root")
+
     with tempfile.TemporaryDirectory() as td:
         tmp_dir = Path(td)
-        src_talents = load(args.source_build, "Talent.dbc", args.source_root, tmp_dir)
-        src_tabs = load(args.source_build, "TalentTab.dbc", args.source_root, tmp_dir)
         wotlk_talents = load("3.3.5a", "Talent.dbc", args.wotlk_root, tmp_dir)
         wotlk_spell = load("3.3.5a", "Spell.dbc", args.wotlk_root, tmp_dir)
         wotlk_tabs = load("3.3.5a", "TalentTab.dbc", args.wotlk_root, tmp_dir)
+        era_src = {
+            era: (load(era, "Talent.dbc", era_roots[era], tmp_dir), load(era, "TalentTab.dbc", era_roots[era], tmp_dir))
+            for era in active_eras
+        }
 
     wotlk_spell_ids = {row["ID"] for row in wotlk_spell.rows}
     wotlk_class_racemask = {
@@ -242,27 +275,28 @@ def main() -> int:
         for slug in CLASSES
     }
     tab_string_builder = StringBlockBuilder(wotlk_tabs.string_block)
-    mapping: dict[int, int] = {}  # classic talent id -> new talent id, shared across classes
-    # (talent ids are globally unique across classes in a real Talent.dbc, so one shared
-    # mapping dict is correct, not a collision risk)
 
     all_new_tab_rows: list[dict] = []
     all_new_talent_rows: list[dict] = []
-    per_class: dict[str, dict] = {}
+    # class -> era -> build_one_class() result, for the mapping CSVs
+    per_class: dict[str, dict[str, dict]] = {c: {} for c in args.classes}
 
-    for class_slug in args.classes:
-        print(f"\n=== {class_slug} ===")
-        result = build_one_class(
-            class_slug,
-            src_talents=src_talents, src_tabs=src_tabs,
-            wotlk_spell_ids=wotlk_spell_ids,
-            wotlk_class_racemask=wotlk_class_racemask,
-            tab_string_builder=tab_string_builder, locale_count=wotlk_tabs.locale_count,
-            mapping=mapping,
-        )
-        all_new_tab_rows += result["new_tab_rows"]
-        all_new_talent_rows += result["new_talent_rows"]
-        per_class[class_slug] = result
+    for era in active_eras:
+        src_talents, src_tabs = era_src[era]
+        mapping: dict[int, int] = {}  # classic id -> new id, fresh per era (see build_one_class's doc comment)
+        for class_slug in args.classes:
+            print(f"\n=== {ERA_CONFIG[era]['label']} / {class_slug} ===")
+            result = build_one_class(
+                class_slug, era=era,
+                src_talents=src_talents, src_tabs=src_tabs,
+                wotlk_spell_ids=wotlk_spell_ids,
+                wotlk_class_racemask=wotlk_class_racemask,
+                tab_string_builder=tab_string_builder, locale_count=wotlk_tabs.locale_count,
+                mapping=mapping,
+            )
+            all_new_tab_rows += result["new_tab_rows"]
+            all_new_talent_rows += result["new_talent_rows"]
+            per_class[class_slug][era] = result
 
     args.out_dbc_dir.mkdir(parents=True, exist_ok=True)
 
@@ -279,9 +313,9 @@ def main() -> int:
     print(f"\nwrote {out_tabs_path}: {len(merged_tabs.rows)} rows "
           f"({len(wotlk_tabs.rows)} stock + {len(all_new_tab_rows)} new)")
 
-    # Talent.dbc: stock rows untouched, each class's new tab's rows inserted
-    # as one whole contiguous block (order within each block already
-    # correct; different classes' blocks don't interact with each other).
+    # Talent.dbc: stock rows untouched, each class/era's new tab's rows
+    # inserted as one whole contiguous block (order within each block
+    # already correct; different blocks don't interact with each other).
     merged_talent_rows = list(wotlk_talents.rows) + all_new_talent_rows
     merged_talents = DbcFile(
         schema=wotlk_talents.schema, locale_count=wotlk_talents.locale_count,
@@ -302,21 +336,21 @@ def main() -> int:
     print("verified: every new tab is a contiguous, (tier,column)-sorted block")
 
     args.out_mapping_dir.mkdir(parents=True, exist_ok=True)
-    tab_by_talent = {r["ID"]: r["TabID"] for r in all_new_talent_rows}
-    for class_slug, result in per_class.items():
-        tab_id_map = result["tab_id_map"]
-        reverse_tab_map = {v: k for k, v in tab_id_map.items()}
-        class_new_ids = {r["ID"] for r in result["new_talent_rows"]}
+    for class_slug, by_era in per_class.items():
         out_mapping_path = args.out_mapping_dir / f"{class_slug}-mapping.csv"
         with open(out_mapping_path, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["classic_talent_id", "server_talent_id", "classic_tab_id", "server_tab_id"])
-            for classic_id, server_id in sorted(mapping.items()):
-                if server_id not in class_new_ids:
-                    continue
-                server_tab = tab_by_talent[server_id]
-                classic_tab = reverse_tab_map[server_tab]
-                w.writerow([classic_id, server_id, classic_tab, server_tab])
+            w.writerow(["era", "classic_talent_id", "server_talent_id", "classic_tab_id", "server_tab_id"])
+            for era, result in by_era.items():
+                tab_by_talent = {r["ID"]: r["TabID"] for r in result["new_talent_rows"]}
+                reverse_tab_map = {v: k for k, v in result["tab_id_map"].items()}
+                id_offset = ERA_CONFIG[era]["id_offset"]
+                for row in result["new_talent_rows"]:
+                    server_id = row["ID"]
+                    classic_id = server_id - id_offset
+                    server_tab = tab_by_talent[server_id]
+                    classic_tab = reverse_tab_map[server_tab]
+                    w.writerow([ERA_CONFIG[era]["label"], classic_id, server_id, classic_tab, server_tab])
         print(f"wrote {out_mapping_path}")
     return 0
 
