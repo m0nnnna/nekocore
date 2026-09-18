@@ -102,6 +102,7 @@ local function UpdateTalents()
 		if not btn then
 			btn = CreateFrame("Button", "NekoTalentUIButton"..i, frame.content)
 			btn:SetSize(ICON_SIZE, ICON_SIZE)
+			btn:RegisterForClicks("LeftButtonUp")
 			btn.slot = btn:CreateTexture(nil, "BACKGROUND")
 			btn.slot:SetTexture("Interface\\Buttons\\UI-EmptySlot")
 			btn.slot:SetPoint("CENTER")
