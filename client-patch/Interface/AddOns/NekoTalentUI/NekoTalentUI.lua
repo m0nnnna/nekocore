@@ -192,6 +192,21 @@ local function CreateUI()
 	frame:RegisterForDrag("LeftButton")
 	frame:SetScript("OnDragStart", frame.StartMoving)
 	frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+	-- LearnTalent() is a fire-and-forget request to the server -- the actual
+	-- rank/points-spent change only lands after the CMSG_LEARN_TALENT round
+	-- trip completes, so the synchronous UpdateTalents() call right after
+	-- LearnTalent() (below) reads pre-update data almost every time. Nothing
+	-- was re-reading it once the real update arrived, so the frame stayed
+	-- frozen on stale (pre-click) values even though the character's
+	-- unspent points genuinely changed server-side. CHARACTER_POINTS_CHANGED
+	-- is the same event the stock talent frame refreshes on for this exact
+	-- reason.
+	frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+	frame:SetScript("OnEvent", function(self, event)
+		if event == "CHARACTER_POINTS_CHANGED" and self:IsShown() then
+			UpdateTalents()
+		end
+	end)
 	frame:SetBackdrop({
 		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
 		edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
