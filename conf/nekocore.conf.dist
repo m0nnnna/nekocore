@@ -1,0 +1,107 @@
+#
+# nekocore module configuration
+#
+
+[worldserver]
+
+########################################
+# nekocore Configuration
+########################################
+
+# Nekocore.LockedMaps
+#
+#        Description: Comma-separated list of map ids players cannot enter (any means -- portal,
+#                      hearthstone, GM teleport, group summon -- all funnel through the same
+#                      check). GM accounts always pass through regardless of this setting, so a
+#                      raid can still be tested/tuned while it's locked to everyone else.
+#                      Live-reloadable: edit this file and run `.reload config` in-game, no
+#                      restart needed. See src/RaidLock.cpp for the full reasoning.
+#
+#                      Common raid map ids: 409 Molten Core, 469 Blackwing Lair, 309 Zul'Gurub,
+#                      533 Naxxramas (40-man), 531 Ahn'Qiraj Temple.
+#
+#        Default:     "" - nothing locked
+#
+Nekocore.LockedMaps = 409
+
+# Nekocore.WorldEliteScaling.Enable
+#
+#        Description: Scales world elites, rare elites, and world bosses (creature_template rank
+#                      ELITE/RAREELITE/WORLDBOSS) found on open-continent maps -- mod-autobalance
+#                      never touches these at all, only instances. Scaling is snapshotted once,
+#                      when the creature engages combat: everyone within
+#                      Nekocore.WorldEliteScaling.Radius of it at that moment is counted (a
+#                      spatial check, not a threat-table one, so a caster/healer standing back
+#                      still counts even before they've landed a hit) and compared against a
+#                      per-rank baseline to produce a health + outgoing-damage multiplier. See
+#                      src/WorldEliteScaling.cpp for the full reasoning.
+#
+#        Default:     1 - enabled
+#
+Nekocore.WorldEliteScaling.Enable = 1
+
+# Nekocore.WorldEliteScaling.Radius
+#
+#        Description: Yards around the creature to count players in, at the moment it engages
+#                      combat. Generous by default (not melee-range) so ranged casters/healers
+#                      standing at their normal fighting distance are still counted.
+#
+#        Default:     100
+#
+Nekocore.WorldEliteScaling.Radius = 100
+
+# Nekocore.WorldEliteScaling.BaselineElite
+# Nekocore.WorldEliteScaling.BaselineRareElite
+# Nekocore.WorldEliteScaling.BaselineWorldBoss
+#
+#        Description: How many players each rank is considered "designed for". The multiplier
+#                      applied is (players present / baseline), clamped to [MinMultiplier,
+#                      MaxMultiplier) -- e.g. a solo player fighting a 3-baseline elite gets it
+#                      scaled to 1/3 strength (before the Min/MaxMultiplier clamp).
+#
+#        Default:     3 / 5 / 15
+#
+Nekocore.WorldEliteScaling.BaselineElite = 3
+Nekocore.WorldEliteScaling.BaselineRareElite = 5
+Nekocore.WorldEliteScaling.BaselineWorldBoss = 15
+
+# Nekocore.WorldEliteScaling.MinMultiplier
+# Nekocore.WorldEliteScaling.MaxMultiplier
+#
+#        Description: Hard floor/ceiling on the health + outgoing-damage multiplier, regardless
+#                      of how the player-count-to-baseline ratio computes. Prevents a creature
+#                      pulled with zero nearby players (e.g. a pet dragging it in) from scaling
+#                      to near-zero, and prevents a large crowd from scaling it beyond a
+#                      reasonable ceiling.
+#
+#        Default:     0.4 / 1.5
+#
+Nekocore.WorldEliteScaling.MinMultiplier = 0.4
+Nekocore.WorldEliteScaling.MaxMultiplier = 1.5
+
+# Nekocore.EraXPRate.Vanilla
+# Nekocore.EraXPRate.TBC
+# Nekocore.EraXPRate.WotLK
+#
+#        Description: Per-era baseline XP multiplier, read by mod-xp-changer's npc_xp_changer
+#                      (modules/mod-xp-changer/src/XPChanger.cpp -- lives in a different module
+#                      because that's where the NPC already is, but the era boundaries it checks
+#                      are the same PROGRESSION_PRE_TBC / PROGRESSION_TBC_TIER_5 ones
+#                      EraTalentGate.cpp and EraProgressionSync.cpp already use). The NPC's own
+#                      "1.0x Normal" personal-preference option means "your current era's
+#                      baseline" rather than a flat rate -- these three settings ARE that
+#                      baseline, multiplied together with whatever personal rate (0.2x-2.0x) the
+#                      player picked at the NPC.
+#
+#                      Deliberately not pre-tuned to any "researched" historical values -- there
+#                      isn't a verified one to encode (only quest REWARD VALUES were ever
+#                      catch-up-boosted by Blizzard, already corrected by mod-individual-
+#                      progression's own QuestXPFix; the base kill-XP formula never was). These
+#                      three numbers are a live tuning dial for however leveling should actually
+#                      feel on this realm -- adjust and `.reload config`, no restart needed.
+#
+#        Default:     1.0 / 1.0 / 1.0 - no-op, identical to having no era baseline at all
+#
+Nekocore.EraXPRate.Vanilla = 1.0
+Nekocore.EraXPRate.TBC = 1.0
+Nekocore.EraXPRate.WotLK = 1.0
