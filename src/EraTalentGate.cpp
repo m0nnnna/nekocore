@@ -42,12 +42,14 @@
 namespace
 {
     // Dedicated era-tab id ranges -- must stay in sync with
-    // tools/build_patch/build_era_tree.py's ERA_CONFIG (tab_base 9000/8000
-    // + class_id*10 + tree_index for Vanilla/TBC respectively).
-    constexpr uint32 VANILLA_TAB_ID_MIN = 9000;
-    constexpr uint32 VANILLA_TAB_ID_MAX = 9999;
-    constexpr uint32 TBC_TAB_ID_MIN = 8000;
-    constexpr uint32 TBC_TAB_ID_MAX = 8999;
+    // tools/build_patch/build_era_tree.py's ERA_CONFIG (tab_base 8000/9000
+    // + class_id*10 + tree_index for Vanilla/TBC respectively -- Vanilla
+    // deliberately sits BELOW TBC numerically now; see that script's
+    // ERA_CONFIG comment for why the order matters, not just the ranges).
+    constexpr uint32 VANILLA_TAB_ID_MIN = 8000;
+    constexpr uint32 VANILLA_TAB_ID_MAX = 8999;
+    constexpr uint32 TBC_TAB_ID_MIN = 9000;
+    constexpr uint32 TBC_TAB_ID_MAX = 9999;
 }
 
 namespace

@@ -93,10 +93,24 @@ CLASS_MASKS = {slug: 1 << (cid - 1) for slug, cid in CLASSES.items()}
 
 # Fixed processing order -- controls tab INDEX stability (see module doc
 # comment). "root_arg" is the argparse dest holding that era's client root.
+#
+# tab_base ordering is NOT cosmetic: live-confirmed (NekoTalentDebug /ntd,
+# two different classes) that LearnTalent()'s internal tabIndex resolution
+# walks a class's TalentTab.dbc rows in ID-ASCENDING order, while
+# GetTalentTabInfo()/GetNumTalentTabs() report them in the order this
+# script actually WRITES them (stock, then Vanilla, then TBC). Vanilla's
+# tab_base used to be 9000 and TBC's 8000 -- numerically backwards from
+# write order -- so clicking what the UI displayed as the 4th tab
+# (Vanilla, id 9090) actually sent the id-ascending 4th tab instead (TBC,
+# id 8090): a full swap of the Vanilla and TBC blocks, reproduced exactly
+# on both a Rogue and a Warlock. Keeping tab_base numerically increasing
+# in the SAME order eras are written here (stock ids < 8000 < 9000) makes
+# both resolutions agree. If a third era is ever added, its tab_base must
+# sort above whichever era is written last, for the same reason.
 ERA_ORDER = ["1.12.1", "2.4.3"]
 ERA_CONFIG = {
-    "1.12.1": {"label": "Vanilla", "tab_base": 9000, "id_offset": 10_000, "root_arg": "vanilla_root"},
-    "2.4.3":  {"label": "TBC",     "tab_base": 8000, "id_offset": 20_000, "root_arg": "tbc_root"},
+    "1.12.1": {"label": "Vanilla", "tab_base": 8000, "id_offset": 10_000, "root_arg": "vanilla_root"},
+    "2.4.3":  {"label": "TBC",     "tab_base": 9000, "id_offset": 20_000, "root_arg": "tbc_root"},
 }
 
 
