@@ -1,24 +1,27 @@
 <?php
-include 'C:\laragon\db_connect.php';
-include 'C:\laragon\srp6.php';
-include 'C:\laragon\tokens.php';
+require __DIR__ . '/inc/bootstrap.php';
+require __DIR__ . '/inc/layout.php';
+
+neko_private('srp6.php');
+neko_private('tokens.php');
 
 $errors = [];
 $success = false;
 $token = trim($_GET['token'] ?? $_POST['token'] ?? '');
 $valid_token = false;
+$pdo = neko_db('auth');
 
-if (!isset($pdo)) {
-    $errors[] = 'Database connection failed. Please check your config.';
+if (!$pdo) {
+    $errors[] = 'The account database is not reachable right now. Try again in a few minutes.';
 } elseif (empty($token)) {
-    $errors[] = 'Missing reset token.';
+    $errors[] = 'This link is missing its reset token. Use the full link from the email.';
 } else {
     $stmt = $pdo->prepare("SELECT * FROM web_password_reset WHERE token_hash = :token_hash AND used = 0 AND expires_at > NOW()");
     $stmt->execute(['token_hash' => hash_token($token)]);
     $reset_row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$reset_row) {
-        $errors[] = 'This password reset link is invalid or has expired. Please request a new one.';
+        $errors[] = 'This reset link is invalid or has expired. Request a new one below.';
     } else {
         $valid_token = true;
 
@@ -30,7 +33,7 @@ if (!isset($pdo)) {
                 $errors[] = 'Password must be at least 6 characters.';
             }
             if ($password !== $confirm_password) {
-                $errors[] = 'Passwords do not match.';
+                $errors[] = 'The two passwords don\'t match.';
             }
 
             if (empty($errors)) {
@@ -45,7 +48,7 @@ if (!isset($pdo)) {
 
                     if (!$locked_row) {
                         $pdo->rollBack();
-                        $errors[] = 'This password reset link was already used or has expired. Please request a new one.';
+                        $errors[] = 'This reset link was already used or has expired. Request a new one below.';
                         $valid_token = false;
                     } else {
                         $stmt = $pdo->prepare("SELECT username FROM account WHERE id = :account_id");
@@ -58,17 +61,9 @@ if (!isset($pdo)) {
                             $valid_token = false;
                         } else {
                             $srp_data = GetSRP6RegistrationData($username, $password);
-
-                            $stmt = $pdo->prepare("UPDATE account SET salt = :salt, verifier = :verifier WHERE id = :account_id");
-                            $stmt->execute([
-                                'salt' => $srp_data['salt'],
-                                'verifier' => $srp_data['verifier'],
-                                'account_id' => $locked_row['account_id']
-                            ]);
-
-                            $stmt = $pdo->prepare("UPDATE web_password_reset SET used = 1 WHERE id = :id");
-                            $stmt->execute(['id' => $locked_row['id']]);
-
+                            $pdo->prepare("UPDATE account SET salt = :salt, verifier = :verifier WHERE id = :account_id")
+                                ->execute(['salt' => $srp_data['salt'], 'verifier' => $srp_data['verifier'], 'account_id' => $locked_row['account_id']]);
+                            $pdo->prepare("UPDATE web_password_reset SET used = 1 WHERE id = :id")->execute(['id' => $locked_row['id']]);
                             $pdo->commit();
                             $success = true;
                             $valid_token = false;
@@ -78,81 +73,47 @@ if (!isset($pdo)) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
-                    $errors[] = 'Could not reset your password: ' . htmlspecialchars($e->getMessage());
+                    $errors[] = 'Could not reset your password: ' . $e->getMessage();
                 }
             }
         }
     }
 }
+
+neko_page_start(['title' => 'Reset password', 'active' => 'account']);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NekoCore ~ Reset Password</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container container--narrow">
 
-        <!-- Navigation -->
-        <nav class="nav-bar">
-            <a href="index.php" class="nav-brand">
-                <img src="images/logo3.png" alt="NekoCore">
-                <span>NekoCore</span>
-            </a>
-            <div class="nav-links">
-                <a href="index.php">Home</a>
-                <a href="announcements.php">News</a>
-                <a href="lb.php">Leaderboard</a>
-                <a href="dropsearch.php">Drops</a>
-                <a href="exchange.php">Exchange</a>
-            </div>
-        </nav>
-
-        <div class="page-header">
-            <h2>Reset Password</h2>
-            <p class="subtitle">Choose a new password</p>
-        </div>
-
-        <?php if (!empty($errors)): ?>
-            <div class="alert alert--error">
-                <ul>
-                    <?php foreach ($errors as $error): ?>
-                        <li><?= htmlspecialchars($error) ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-        <?php endif; ?>
-
-        <?php if ($success): ?>
-            <div class="alert alert--success">
-                Your password has been reset. You can now log in with your new password.
-            </div>
-        <?php elseif ($valid_token): ?>
-            <form method="POST">
-                <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
-                <div class="form-group">
-                    <label class="form-label">New Password</label>
-                    <input type="password" name="password" class="form-input" required minlength="6" placeholder="At least 6 characters">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Confirm New Password</label>
-                    <input type="password" name="confirm_password" class="form-input" required placeholder="Re-enter your new password">
-                </div>
-                <button type="submit" class="btn btn--primary">Reset Password</button>
-            </form>
-        <?php endif; ?>
-
-        <div class="back-link"><a href="index.php">&#8592; Back to home</a></div>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p><a href="https://wiki.nekos.farm/en/WoW">Wiki</a></p>
-            <div class="neko-footer-art">&#128049;&#128062;&#128049;</div>
-        </footer>
-
+<div class="narrow">
+    <div class="page-head">
+        <h1>Choose a new password</h1>
+        <p>You'll use it on the game's login screen right away.</p>
     </div>
-</body>
-</html>
+
+    <?php if (!empty($errors)): ?>
+        <div class="alert alert--error"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div>
+    <?php endif; ?>
+
+    <?php if ($success): ?>
+        <div class="alert alert--success">Your password is reset. Log in with the new one.</div>
+        <p><a class="btn btn--ice" href="index.php">Back to home</a></p>
+    <?php elseif ($valid_token): ?>
+        <form method="POST" class="form-card">
+            <input type="hidden" name="token" value="<?= e($token) ?>">
+            <div class="field">
+                <label for="password">New password</label>
+                <input class="input" type="password" id="password" name="password" required minlength="6" autocomplete="new-password" placeholder="At least 6 characters" autofocus>
+            </div>
+            <div class="field">
+                <label for="confirm_password">Confirm new password</label>
+                <input class="input" type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password" placeholder="Same again">
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn--coral">Set new password</button>
+            </div>
+        </form>
+    <?php else: ?>
+        <p><a class="btn btn--ice" href="forgot_password.php">Request a new reset link</a></p>
+    <?php endif; ?>
+</div>
+
+<?php neko_page_end(); ?>

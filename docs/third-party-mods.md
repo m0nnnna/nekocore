@@ -58,8 +58,10 @@ python tools/install_patch/install_client.py --wotlk-root <client> --bundle-zip 
 ```
 
 `worldserver.conf` needs `PlayerStart.CustomSpells = 1` (mod-uac; without
-it Night Elf / Draenei warlocks are created without an imp) and
-`Warden.Enabled = 1` (Breaking News). Both are set on the live box; `etc/`
+it Night Elf / Draenei warlocks are created without an imp),
+`Warden.Enabled = 1` (Breaking News) and `Instance.IgnoreRaid = 1` (the
+delve maps are raid-flagged instances; without it the client refuses entry
+with "you need to be in a raid group"). Both are set on the live box; `etc/`
 is a gitignored bind mount, so on a rebuilt box set them again.
 
 `conf/lua-overrides/` (create it when needed) is copied over

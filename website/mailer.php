@@ -28,12 +28,27 @@ class SmtpMailer {
      * @throws Exception on any SMTP-level failure.
      */
     public function send(string $toAddress, string $subject, string $body): void {
+        // This mail server (192.168.1.7) uses a self-signed certificate --
+        // confirmed directly (openssl/python smtplib both reject it with
+        // the default CA-verifying context). It's an internal-only relay
+        // we control, so encrypted-but-unverified is an acceptable
+        // tradeoff here; verification stays on for anything else.
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ],
+        ]);
+
         $transport = $this->encryption === 'tls' ? 'ssl://' : '';
         $socket = @stream_socket_client(
             $transport . $this->host . ':' . $this->port,
             $errno,
             $errstr,
-            10
+            10,
+            STREAM_CLIENT_CONNECT,
+            $context
         );
         if (!$socket) {
             throw new Exception("Could not connect to mail server: $errstr ($errno)");

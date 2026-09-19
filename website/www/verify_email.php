@@ -1,16 +1,18 @@
 <?php
-include 'C:\laragon\db_connect.php';
-include 'C:\laragon\tokens.php';
+require __DIR__ . '/inc/bootstrap.php';
+require __DIR__ . '/inc/layout.php';
+
+neko_private('tokens.php');
 
 $errors = [];
 $success = false;
-
 $token = trim($_GET['token'] ?? '');
+$pdo = neko_db('auth');
 
-if (!isset($pdo)) {
-    $errors[] = 'Database connection failed. Please check your config.';
+if (!$pdo) {
+    $errors[] = 'The account database is not reachable right now. Try the link again in a few minutes.';
 } elseif (empty($token)) {
-    $errors[] = 'Missing verification token.';
+    $errors[] = 'This link is missing its verification token. Use the full link from the email.';
 } else {
     $token_hash = hash_token($token);
 
@@ -23,7 +25,7 @@ if (!isset($pdo)) {
 
         if (!$pending) {
             $pdo->rollBack();
-            $errors[] = 'This verification link is invalid or has expired. Please register again.';
+            $errors[] = 'This verification link is invalid or has expired. Register again to get a fresh one.';
         } else {
             $stmt = $pdo->prepare("
                 INSERT INTO account (username, salt, verifier, email, reg_mail, joindate, last_ip, expansion)
@@ -37,10 +39,7 @@ if (!isset($pdo)) {
                 'reg_mail' => $pending['email'],
                 'last_ip' => $pending['last_ip']
             ]);
-
-            $stmt = $pdo->prepare("DELETE FROM web_email_verification WHERE id = :id");
-            $stmt->execute(['id' => $pending['id']]);
-
+            $pdo->prepare("DELETE FROM web_email_verification WHERE id = :id")->execute(['id' => $pending['id']]);
             $pdo->commit();
             $success = true;
         }
@@ -49,72 +48,44 @@ if (!isset($pdo)) {
             $pdo->rollBack();
         }
         if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-            $errors[] = 'That username or email was taken by another account while this link was waiting to be used. Please register again with a different username.';
+            $errors[] = 'That username or email was taken by another account while this link was waiting. Register again with a different username.';
         } else {
-            $errors[] = 'Could not finish creating your account: ' . htmlspecialchars($e->getMessage());
+            $errors[] = 'Could not finish creating your account: ' . $e->getMessage();
         }
     }
 }
+
+neko_page_start(['title' => 'Verify email', 'active' => 'account']);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NekoCore ~ Verify Email</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container container--narrow">
 
-        <!-- Navigation -->
-        <nav class="nav-bar">
-            <a href="index.php" class="nav-brand">
-                <img src="images/logo3.png" alt="NekoCore">
-                <span>NekoCore</span>
-            </a>
-            <div class="nav-links">
-                <a href="index.php">Home</a>
-                <a href="announcements.php">News</a>
-                <a href="lb.php">Leaderboard</a>
-                <a href="dropsearch.php">Drops</a>
-                <a href="exchange.php">Exchange</a>
-            </div>
-        </nav>
-
-        <div class="page-header">
-            <h2>Verify Email</h2>
-            <p class="subtitle">Finishing your registration</p>
+<div class="narrow">
+    <?php if ($success): ?>
+        <div class="page-head">
+            <h1>You're in!</h1>
+            <p>Your account is verified and ready. Grab the client and log in with the username and password you chose.</p>
         </div>
+        <div class="panel panel--ice">
+            <h3 class="panel__title"><?= neko_icon('download') ?> Start playing</h3>
+            <ul class="dl">
+                <li>
+                    <a class="btn btn--coral btn--block" href="<?= e($neko['client_zip']) ?>" download>Download the client</a>
+                    <small>Full 3.3.5a client with the NekoCore patch. Extract anywhere and run.</small>
+                </li>
+                <li>
+                    <a class="btn btn--ghost btn--block" href="<?= e($neko['realmlist_file']) ?>" download>Get realmlist.wtf</a>
+                    <small>Already have a client? Drop this in <code>WoW/Data/enUS/</code>.</small>
+                </li>
+            </ul>
+        </div>
+        <p class="notice-line">New here? The <a href="<?= e($neko['wiki_url']) ?>">wiki</a> covers what's different on NekoCore, and <a href="<?= e($neko['discord_url']) ?>">Discord</a> is where everyone hangs out.</p>
+    <?php else: ?>
+        <div class="page-head">
+            <h1>Verify your email</h1>
+            <p>Finishing your registration.</p>
+        </div>
+        <div class="alert alert--error"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div>
+        <p><a class="btn btn--ice" href="register.php">Register again</a></p>
+    <?php endif; ?>
+</div>
 
-        <?php if (!empty($errors)): ?>
-            <div class="alert alert--error">
-                <ul>
-                    <?php foreach ($errors as $error): ?>
-                        <li><?= htmlspecialchars($error) ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-            <div class="back-link"><a href="index.php">&#8592; Back to home</a></div>
-        <?php elseif ($success): ?>
-            <div class="alert alert--success">
-                Your account is verified and ready! You can now log in.
-            </div>
-            <div class="cta-box">
-                <p>Ready to connect? <a href="realmlist.wtf" download>Download Connection File</a></p>
-                <small>Place this realmlist.wtf in your WoW/Data/enUS/ folder to connect.</small>
-                <br><br>
-                <p><a href="nekocore.zip" download>Download Client</a></p>
-                <small>Extract the client zip and use it to play on the server.</small>
-            </div>
-        <?php endif; ?>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p><a href="https://wiki.nekos.farm/en/WoW">Wiki</a></p>
-            <div class="neko-footer-art">&#128049;&#128062;&#128049;</div>
-        </footer>
-
-    </div>
-</body>
-</html>
+<?php neko_page_end(); ?>

@@ -1,127 +1,64 @@
 <?php
-include 'C:\laragon\db_connect.php';
-include 'C:\laragon\db_connect_chars.php';  // This should connect to ac_characters
-include 'C:\laragon\db_connect_world.php';
+require __DIR__ . '/inc/bootstrap.php';
+require __DIR__ . '/inc/layout.php';
 
 $results = [];
-$errors = [];
+$error = null;
 
-try {
-    if (!$pdo_chars) {
-        throw new Exception('Characters database connection failed.');
+$pdo_chars = neko_db('chars');
+if (!$pdo_chars) {
+    $error = 'The character database is not reachable right now.';
+} else {
+    try {
+        $results = $pdo_chars->query("
+            SELECT id, subject, give_item, give_qty, receive_item, receive_qty, description
+            FROM item_exchange_rates
+            WHERE enabled = 1
+            ORDER BY id ASC
+        ")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        $error = 'Database error: ' . $e->getMessage();
     }
-
-    $sql = "
-        SELECT
-            id,
-            subject,
-            give_item,
-            give_qty,
-            receive_item,
-            receive_qty,
-            enabled,
-            description
-        FROM item_exchange_rates
-        WHERE enabled = 1
-        ORDER BY id ASC
-    ";
-
-    $stmt = $pdo_chars->query($sql);
-    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    if (empty($results)) {
-        $errors[] = 'No active exchange rates found.';
-    }
-
-} catch (Exception $e) {
-    $errors[] = 'Database error: ' . $e->getMessage();
 }
+
+neko_page_start(['title' => 'Item exchange', 'active' => 'exchange']);
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NekoCore ~ Item Exchange</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container">
+<div class="page-head">
+    <h1>Item exchange</h1>
+    <p>Mail the items on the left with the listed subject and the exchange sends back what's on the right. These are the rates live on the realm right now.</p>
+</div>
 
-        <!-- Navigation -->
-        <nav class="nav-bar">
-            <a href="index.php" class="nav-brand">
-                <img src="images/logo3.png" alt="NekoCore">
-                <span>NekoCore</span>
-            </a>
-            <div class="nav-links">
-                <a href="index.php">Home</a>
-                <a href="announcements.php">News</a>
-                <a href="lb.php">Leaderboard</a>
-                <a href="dropsearch.php">Drops</a>
-                <a href="exchange.php" class="active">Exchange</a>
-            </div>
-        </nav>
-
-        <!-- Page Header -->
-        <div class="page-header">
-            <h2>Item Exchange Rates</h2>
-            <p class="subtitle">Current active item exchanges</p>
-        </div>
-
-        <?php if (!empty($errors)): ?>
-            <div class="alert alert--error">
-                <?php foreach ($errors as $e): ?>
-                    <p><?= htmlspecialchars($e) ?></p>
+<?php if ($error): ?>
+    <div class="alert alert--error"><?= e($error) ?></div>
+<?php elseif (empty($results)): ?>
+    <div class="empty"><?= neko_icon('coins') ?>No exchanges are open at the moment.</div>
+<?php else: ?>
+    <p class="result-note"><?= count($results) ?> active exchange<?= count($results) === 1 ? '' : 's' ?></p>
+    <div class="tbl-wrap">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>Mail subject</th>
+                    <th>You send</th>
+                    <th class="arrow"></th>
+                    <th>You get</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($results as $row): ?>
+                    <tr>
+                        <td><code><?= e($row['subject']) ?></code></td>
+                        <td><?= (int)$row['give_qty'] ?> × <?= e($row['give_item']) ?></td>
+                        <td class="arrow"><?= neko_icon('chev-r') ?></td>
+                        <td><?= (int)$row['receive_qty'] ?> × <?= e($row['receive_item']) ?></td>
+                        <td><?= e($row['description']) ?></td>
+                    </tr>
                 <?php endforeach; ?>
-            </div>
-        <?php endif; ?>
-
-        <?php if (!empty($results)): ?>
-            <p class="result-note">Currently Active Exchanges (<?= count($results) ?>)</p>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Subject</th>
-                            <th>Give</th>
-                            <th>Qty</th>
-                            <th></th>
-                            <th>Receive</th>
-                            <th>Qty</th>
-                            <th>Status</th>
-                            <th>Description</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($results as $row): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($row['id']) ?></td>
-                                <td><?= htmlspecialchars($row['subject']) ?></td>
-                                <td><?= htmlspecialchars($row['give_item']) ?></td>
-                                <td><?= htmlspecialchars($row['give_qty']) ?></td>
-                                <td style="text-align:center; color: var(--coral);">&#8594;</td>
-                                <td><?= htmlspecialchars($row['receive_item']) ?></td>
-                                <td><?= htmlspecialchars($row['receive_qty']) ?></td>
-                                <td class="<?= $row['enabled'] ? 'badge--on' : 'badge--off' ?>">
-                                    <?= $row['enabled'] ? 'ON' : 'OFF' ?>
-                                </td>
-                                <td style="text-align:left;"><?= htmlspecialchars($row['description']) ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p><a href="https://wiki.nekos.farm/en/WoW">Wiki</a></p>
-            <div class="neko-footer-art">&#128049;&#128062;&#128049;</div>
-        </footer>
-
+            </tbody>
+        </table>
     </div>
-</body>
-</html>
+<?php endif; ?>
+
+<?php neko_page_end(); ?>

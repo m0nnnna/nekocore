@@ -1,8 +1,10 @@
 <?php
-include 'C:\laragon\db_connect.php';
-include 'C:\laragon\tokens.php';
-include 'C:\laragon\mailer.php';
-include 'C:\laragon\mail_config.php';
+require __DIR__ . '/inc/bootstrap.php';
+require __DIR__ . '/inc/layout.php';
+
+neko_private('tokens.php');
+neko_private('mailer.php');
+neko_private('mail_config.php');
 
 $errors = [];
 $submitted = false;
@@ -11,24 +13,24 @@ $resend_cooldown_minutes = 5;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $identifier = trim($_POST['identifier'] ?? '');
+    $pdo = neko_db('auth');
 
     if (empty($identifier)) {
         $errors[] = 'Enter your username or email.';
-    } elseif (!isset($pdo)) {
-        $errors[] = 'Database connection failed. Please check your config.';
+    } elseif (!$pdo) {
+        $errors[] = 'The account database is not reachable right now. Try again in a few minutes.';
     } else {
         // Always show the same outcome whether or not an account matched,
         // so this form can't be used to check which usernames/emails exist.
         $submitted = true;
 
         try {
-            $stmt = $pdo->prepare("SELECT id FROM account WHERE username = :username OR email = :email LIMIT 1");
+            $stmt = $pdo->prepare("SELECT id, email FROM account WHERE username = :username OR email = :email LIMIT 1");
             $stmt->execute(['username' => $identifier, 'email' => $identifier]);
             $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($account) {
                 $account_id = $account['id'];
-
                 $pdo->exec("DELETE FROM web_password_reset WHERE expires_at < NOW()");
 
                 $stmt = $pdo->prepare("SELECT COUNT(*) FROM web_password_reset WHERE account_id = :account_id AND used = 0 AND created_at > DATE_SUB(NOW(), INTERVAL :cooldown MINUTE)");
@@ -36,13 +38,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($stmt->fetchColumn() == 0) {
                     $token = generate_token();
-
-                    $stmt = $pdo->prepare("
-                        SELECT email FROM account WHERE id = :account_id
-                    ");
-                    $stmt->execute(['account_id' => $account_id]);
-                    $email = $stmt->fetchColumn();
-
                     $stmt = $pdo->prepare("
                         INSERT INTO web_password_reset (account_id, token_hash, last_ip, expires_at)
                         VALUES (:account_id, :token_hash, :last_ip, DATE_ADD(NOW(), INTERVAL :ttl HOUR))
@@ -54,14 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'ttl' => $reset_ttl_hours
                     ]);
 
-                    if (!empty($email)) {
-                        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                        $reset_url = $scheme . '://' . $_SERVER['HTTP_HOST'] . '/reset_password.php?token=' . urlencode($token);
-
+                    if (!empty($account['email'])) {
+                        $reset_url = neko_base_url() . '/reset_password.php?token=' . urlencode($token);
                         try {
                             $mailer = new SmtpMailer($mail_config);
                             $mailer->send(
-                                $email,
+                                $account['email'],
                                 'Reset your NekoCore password',
                                 "Someone (hopefully you) asked to reset the password for this account.\n\n" .
                                 "Click the link below to set a new password:\n\n" .
@@ -69,8 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 "This link expires in {$reset_ttl_hours} hour(s). If you didn't request this, just ignore this email -- your password won't change.\n"
                             );
                         } catch (Exception $e) {
-                            // Swallow send failures here too -- the response to the visitor
-                            // must not reveal whether an account/email existed.
+                            // Swallow send failures too -- the response must not reveal
+                            // whether an account/email existed.
                         }
                     }
                 }
@@ -80,70 +73,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+neko_page_start(['title' => 'Forgot password', 'active' => 'account']);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NekoCore ~ Forgot Password</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container container--narrow">
 
-        <!-- Navigation -->
-        <nav class="nav-bar">
-            <a href="index.php" class="nav-brand">
-                <img src="images/logo3.png" alt="NekoCore">
-                <span>NekoCore</span>
-            </a>
-            <div class="nav-links">
-                <a href="index.php">Home</a>
-                <a href="announcements.php">News</a>
-                <a href="lb.php">Leaderboard</a>
-                <a href="dropsearch.php">Drops</a>
-                <a href="exchange.php">Exchange</a>
-            </div>
-        </nav>
-
-        <div class="page-header">
-            <h2>Forgot Password</h2>
-            <p class="subtitle">We'll email you a link to set a new one</p>
-        </div>
-
-        <?php if (!empty($errors)): ?>
-            <div class="alert alert--error">
-                <ul>
-                    <?php foreach ($errors as $error): ?>
-                        <li><?= htmlspecialchars($error) ?></li>
-                    <?php endforeach; ?>
-                </ul>
-            </div>
-        <?php endif; ?>
-
-        <?php if ($submitted): ?>
-            <div class="alert alert--success">
-                If an account with that username or email exists, a password reset link is on its way. Check your inbox (and spam folder).
-            </div>
-        <?php else: ?>
-            <form method="POST">
-                <div class="form-group">
-                    <label class="form-label" for="identifier">Username or Email</label>
-                    <input type="text" id="identifier" name="identifier" class="form-input" required placeholder="Your username or email" value="<?= htmlspecialchars($_POST['identifier'] ?? '') ?>">
-                </div>
-                <button type="submit" class="btn btn--primary">Send Reset Link</button>
-            </form>
-        <?php endif; ?>
-
-        <div class="back-link"><a href="index.php">&#8592; Back to home</a></div>
-
-        <!-- Footer -->
-        <footer class="footer">
-            <p><a href="https://wiki.nekos.farm/en/WoW">Wiki</a></p>
-            <div class="neko-footer-art">&#128049;&#128062;&#128049;</div>
-        </footer>
-
+<div class="narrow">
+    <div class="page-head">
+        <h1>Forgot your password?</h1>
+        <p>Tell us your username or email and we'll send a link to set a new one.</p>
     </div>
-</body>
-</html>
+
+    <?php if (!empty($errors)): ?>
+        <div class="alert alert--error"><ul><?php foreach ($errors as $error): ?><li><?= e($error) ?></li><?php endforeach; ?></ul></div>
+    <?php endif; ?>
+
+    <?php if ($submitted): ?>
+        <div class="alert alert--success">
+            If an account with that username or email exists, a reset link is on its way. It's valid for <?= $reset_ttl_hours ?> hour<?= $reset_ttl_hours === 1 ? '' : 's' ?> — check your spam folder if it doesn't show up.
+        </div>
+        <p><a class="btn btn--ice" href="index.php">Back to home</a></p>
+    <?php else: ?>
+        <form method="POST" class="form-card">
+            <div class="field">
+                <label for="identifier">Username or email</label>
+                <input class="input" type="text" id="identifier" name="identifier" required autocomplete="username" placeholder="Your username or email" value="<?= e($_POST['identifier'] ?? '') ?>" autofocus>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn--coral">Send reset link</button>
+                <span class="spacer"></span>
+                <a href="register.php">Need an account instead?</a>
+            </div>
+        </form>
+    <?php endif; ?>
+</div>
+
+<?php neko_page_end(); ?>
