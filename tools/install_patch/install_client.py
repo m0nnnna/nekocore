@@ -38,6 +38,19 @@ Usage:
     # (needs 7z on PATH; --progression-variant V|S picks the mana-cost variant)
     python install_client.py --wotlk-root "D:\\...\\3.3.5a" \\
         --progression-module-root "D:\\AzerothCore\\modules\\mod-individual-progression"
+
+    # Additionally write a zip of just the patch (patch-Z.mpq + addons) that
+    # an existing player extracts over their client folder
+    python install_client.py --wotlk-root "D:\\...\\3.3.5a" --bundle-zip website/downloads/nekocore-patch.zip
+
+Third-party mods (tools/third_party/fetch.py) ride along automatically when
+present -- the merged DBCs from build_mod_dbcs.py (mod-uac race/class
+unlocks, Prestige titles, Delves maps), Delves' client assets (ADT/WMO/M2,
+loading screens, minimaps, music -- ~300 MB, all inside patch-Z.mpq) and the
+PrestigeSystem / DelvesTeleporter addons. One MPQ + one AddOns folder is the
+whole client install; the mods' own patch-P.mpq / patch-z.mpq are NOT used
+(their DBCs are merged into ours instead, they'd otherwise fight each other
+over CharBaseInfo).
 """
 from __future__ import annotations
 
@@ -60,6 +73,19 @@ GENERATED_DIR = REPO_ROOT / "data" / "generated"
 STAGED_MPQ = REPO_ROOT / "client-patch" / "patch-nekocore-talents.mpq"
 ADDONS_DIR = REPO_ROOT / "client-patch" / "Interface" / "AddOns"
 PROGRESSION_STAGE_DIR = REPO_ROOT / "client-patch" / "progression-optional"
+MOD_DBC_DIR = REPO_ROOT / "data" / "generated" / "dbc"  # build_mod_dbcs.py output
+THIRD_PARTY = REPO_ROOT / "third-party"
+DELVES_MPQ_DIR = THIRD_PARTY / "Delves" / "MPQ"
+# third-party addon folders (loose files under Interface/AddOns, like ours)
+THIRD_PARTY_ADDONS = [
+    THIRD_PARTY / "Prestige-and-Draft-Mode" / "Client Side Files" / "Client Addon" / "PrestigeSystem",
+    THIRD_PARTY / "Delves" / "addon" / "DelvesTeleporter",
+]
+# Delves ships its custom creature models under MPQ/starwars/<model>/ but its
+# CreatureModelData rows reference them as Creature/<model>/<model>.mdx, so
+# that one folder is remapped; everything else is already laid out as the
+# client expects (World/Maps/..., Interface/Glues/..., textures/minimap/..., Sound/...).
+DELVES_PATH_REMAP = {"starwars": "Creature"}
 
 # mod-individual-progression's optional/ ships these server-only DBCs in
 # dbc.7z (unconditional) plus Spell.dbc in patch-V.7z/patch-S.7z (mutually
@@ -142,6 +168,25 @@ def package_mpq() -> None:
             files["DBFilesClient\\Spell.dbc"] = spell.read_bytes()
             print("Including progression Spell.dbc in the client MPQ "
                   "(server-only DBCs -- SkillLine etc. -- don't need a client copy)")
+    mod_dbcs = sorted(MOD_DBC_DIR.glob("*.dbc")) if MOD_DBC_DIR.is_dir() else []
+    for dbc in mod_dbcs:
+        key = f"DBFilesClient\\{dbc.name}"
+        if key in files:
+            raise SystemExit(f"{dbc} collides with a DBC already staged from another source")
+        files[key] = dbc.read_bytes()
+    if mod_dbcs:
+        print(f"Including {len(mod_dbcs)} merged third-party DBCs from {MOD_DBC_DIR}")
+    else:
+        print("note: no merged third-party DBCs (tools/build_patch/build_mod_dbcs.py) -- "
+              "race/class unlocks, prestige titles and delves maps won't be in the client")
+    if DELVES_MPQ_DIR.is_dir():
+        n = 0
+        for f in sorted(p for p in DELVES_MPQ_DIR.rglob("*") if p.is_file()):
+            parts = list(f.relative_to(DELVES_MPQ_DIR).parts)
+            parts[0] = DELVES_PATH_REMAP.get(parts[0], parts[0])
+            files["\\".join(parts)] = f.read_bytes()
+            n += 1
+        print(f"Including {n} Delves client asset files from {DELVES_MPQ_DIR}")
     write_archive(STAGED_MPQ, files)
     print(f"Packaged {STAGED_MPQ} ({STAGED_MPQ.stat().st_size:,} bytes, {len(files)} files)")
 
@@ -159,14 +204,30 @@ def deploy_mpq(wotlk_root: Path, mpq_name: str) -> None:
     print(f"Deployed -> {dest}")
 
 
+def addon_dirs() -> list[Path]:
+    ours = sorted(p for p in ADDONS_DIR.iterdir() if p.is_dir())
+    theirs = [p for p in THIRD_PARTY_ADDONS if p.is_dir()]
+    return ours + theirs
+
+
 def deploy_addons(wotlk_root: Path) -> None:
     dest_root = wotlk_root / "Interface" / "AddOns"
-    for addon_dir in sorted(p for p in ADDONS_DIR.iterdir() if p.is_dir()):
+    for addon_dir in addon_dirs():
         dest = dest_root / addon_dir.name
-        dest.mkdir(parents=True, exist_ok=True)
-        for f in addon_dir.iterdir():
-            shutil.copyfile(f, dest / f.name)
+        shutil.copytree(addon_dir, dest, dirs_exist_ok=True)
         print(f"Deployed addon -> {dest}")
+
+
+def write_bundle_zip(out: Path, mpq_name: str) -> None:
+    """Everything a player drops over a stock client: Data/<mpq> + Interface/AddOns/*."""
+    import zipfile
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(STAGED_MPQ, f"Data/{mpq_name}")
+        for addon_dir in addon_dirs():
+            for f in sorted(p for p in addon_dir.rglob("*") if p.is_file()):
+                z.write(f, f"Interface/AddOns/{addon_dir.name}/{f.relative_to(addon_dir).as_posix()}")
+    print(f"Wrote {out} ({out.stat().st_size:,} bytes)")
 
 
 def main() -> int:
@@ -184,6 +245,8 @@ def main() -> int:
                           "Omit to reuse whatever was staged by a previous run, if any.")
     ap.add_argument("--progression-variant", choices=["V", "S"], default="V",
                      help="mana-cost Spell.dbc variant: V = era-authentic lower costs, S = keep WotLK costs (default V)")
+    ap.add_argument("--bundle-zip", type=Path,
+                     help="also write a zip of the patch (Data/patch-Z.mpq + Interface/AddOns) for players to extract over a stock client")
     args = ap.parse_args()
 
     if not args.wotlk_root.is_dir():
@@ -201,6 +264,10 @@ def main() -> int:
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 
     deploy_addons(args.wotlk_root)
+    if args.bundle_zip:
+        if args.addons_only and not STAGED_MPQ.exists():
+            raise SystemExit("--bundle-zip needs a packaged MPQ; drop --addons-only")
+        write_bundle_zip(args.bundle_zip, "patch-Z.mpq")
 
     if args.addons_only:
         print("\nDone. /reload is enough to pick up addon changes.")

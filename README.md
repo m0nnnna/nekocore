@@ -7,9 +7,9 @@ build 12340 server) plus
 
 **This repo holds only what we add.** It is not a fork of AzerothCore and does
 not vendor the engine or the progression module -- both are read from the
-live checkout at `D:\AzerothCore` (their own separate repos; see that tree's
+live checkout at `C:\nekocore\server` (their own separate repos; see that tree's
 `modules/` for the progression module). This repo is linked into
-`D:\AzerothCore\modules\nekocore` via a real NTFS junction (see "Live and
+`C:\nekocore\server\modules\nekocore` via a real NTFS junction (see "Live and
 confirmed working, on a second, separate AzerothCore checkout" below for why
 a plain symlink doesn't work here), so a build picks it up without anything
 being copied.
@@ -202,7 +202,7 @@ AzerothCore schema (confirmed directly: real schema uses plain `id`). That
 checkout's C++ and its own SQL files disagree with each other, and it
 predates this feature's needs by 9 months (2025-12-07) regardless. Rather
 than patch a fork mismatch blind, stood up a second, completely fresh
-checkout at `D:\AzerothCore` -- clean clone of upstream `azerothcore-wotlk`
+checkout at `C:\nekocore\server` -- clean clone of upstream `azerothcore-wotlk`
 (2026-09-15), clean clone of `mod-individual-progression` (2026-08-30,
 `AREA_SILVERMOON_CITY` fix re-applied -- see `IndividualProgression.cpp`,
 genuinely missing from the module's own enum, not core-version-dependent),
@@ -216,7 +216,7 @@ stack for testing; explicitly did NOT migrate any database data (fresh
 **Cutover complete: this is now the live stack, on standard ports.**
 `C:\azerothcore-wotlk`'s containers are stopped and removed (`docker compose
 down`, confirmed zero characters online first), its stale locally-built
-images cleaned up. `D:\AzerothCore` now runs as `ac-database`/`ac-authserver`/
+images cleaned up. `C:\nekocore\server` now runs as `ac-database`/`ac-authserver`/
 `ac-worldserver` on the standard ports (3306/3724/8085/7878) -- same ports
 and same LAN address (`192.168.0.10`) external DNS/routing already pointed
 at, so no outside reconfiguration needed. One thing the fresh install got
@@ -285,11 +285,22 @@ client-patch/         Interface/AddOns/* (real addon source, committed) +
                       the packaged MPQ patch (gitignored, see below)
 src/                 EraTalentGate.cpp/nekocore_loader.cpp -- the live
                       AzerothCore module (junctioned into
-                      D:\AzerothCore\modules\nekocore). Also still holds the
+                      C:\nekocore\server\modules\nekocore). Also still holds the
                       ORIGINAL additive-approach Rust tools
                       (build_talent_merge.rs, dbc.rs), kept for history only,
                       superseded by tools/build_patch/build_era_tree.py.
 docs/                notes that don't belong in commit messages
+website/             the public site + its Docker image (runs as the
+                      neko-website service in the server stack, port 8088)
+server/              the live AzerothCore checkout (moved from
+                      D:\AzerothCore on 2026-09-18). GITIGNORED -- it is its
+                      own git repo with its own history; everything of ours
+                      reaches it through tools/server/sync_module.py,
+                      core-patches/, and server/docker-compose.override.yml.
+                      Run all `docker compose ...` commands from here.
+                      COMPOSE_PROJECT_NAME=azerothcore in server/.env keeps
+                      the pre-move volume/container names, so the database
+                      volume is still azerothcore_ac-database.
 ```
 
 ## Building an era tree
@@ -327,7 +338,7 @@ files.
 That means "provide a repo of client + server" already has a clean answer
 with no extra packaging step needed:
 - **Server** = this repo's `src/` synced into a real AzerothCore checkout
-  (`D:\AzerothCore\modules\nekocore\src`, via `tools/server/sync_module.py`
+  (`C:\nekocore\server\modules\nekocore\src`, via `tools/server/sync_module.py`
   -- see "Docker couldn't see the module at all" below for why this is a
   copy, not a live link) + the module's own C++ (`src/EraTalentGate.cpp`,
   `src/EraProgressionSync.cpp`, `src/nekocore_loader.cpp`) built into the
@@ -441,7 +452,7 @@ exercised was `EraTalentGate.cpp`'s own job: blocking `CMSG_LEARN_TALENT`
 packets server-side. It looked done because everything *observable*
 worked; the actual enforcement code was simply never in the binary.
 
-Root cause: `D:\AzerothCore\modules\nekocore` was an NTFS junction
+Root cause: `C:\nekocore\server\modules\nekocore` was an NTFS junction
 (`mklink /J`) pointing at `C:\nekocore`, set up earlier in the session
 specifically to fix an EARLIER, DIFFERENT bug (Git Bash's `ln -s`
 silently becoming a one-time directory *copy* instead of a live link).
@@ -464,7 +475,7 @@ directly.
 
 **Fix: no more links for anything Docker needs to build from.**
 `tools/server/sync_module.py` copies this repo's `src/` into
-`D:\AzerothCore\modules\nekocore\src` as real files. Run it before every
+`C:\nekocore\server\modules\nekocore\src` as real files. Run it before every
 `docker compose build ac-worldserver` -- there's no build hook that does
 this automatically yet, so it's a manual step for now. Slower to iterate
 than a live link would have been, but a live link demonstrably doesn't
@@ -491,7 +502,7 @@ needs before deploying for real: `DungeonRespawn`, `mod-assistant`,
 credits/license) plus `mod-live-reload` and `mod-xp-changer` (hand-written,
 no public repo -- recovered from the old, decommissioned
 `C:\azerothcore-wotlk` checkout, where they existed but had never actually
-been migrated to the live `D:\AzerothCore` server despite being assumed
+been migrated to the live `C:\nekocore\server` server despite being assumed
 already-present). All ten modules (these eight plus
 `mod-individual-progression` and `nekocore`) now compile and link into the
 same worldserver binary, confirmed live: `WORLD: World Initialized In 0
@@ -519,13 +530,13 @@ hit:
   ~4 hunks across `LFGMgr.cpp`/`.h`/`LFGQueue.cpp`), but didn't apply
   cleanly (`git apply` failed -- line numbers drifted from whatever
   revision it was cut against). Applied by hand instead, same net effect.
-  **This is a real modification to `D:\AzerothCore\src` itself**, not just
+  **This is a real modification to `C:\nekocore\server\src` itself**, not just
   a module -- flagged to the user before applying (approved). Now owned
   going forward, not left as a silent local diff: `mod-solo-lfg` itself is
   forked to [`m0nnnna/mod-solo-lfg`](https://github.com/m0nnnna/mod-solo-lfg)
   (the local checkout's `origin`; `upstream` still points at
   `milestorme/mod-solo-lfg`) with the `OnPlayerLogin` fix pushed there, and
-  the `LFGMgr` core patch is committed locally in `D:\AzerothCore`'s own
+  the `LFGMgr` core patch is committed locally in `C:\nekocore\server`'s own
   git history (not pushed anywhere -- it's core source, forking the whole
   core wasn't asked for, just tracked so a fresh checkout of this exact
   revision doesn't lose it).
@@ -719,7 +730,7 @@ boot log had been quietly logging `Config::LoadFile: Failed open file
 whole project without anyone noticing, since a missing module conf just
 silently falls back to hardcoded defaults rather than erroring. Fixed by
 copying every `<name>.conf.dist` to `<name>.conf` in
-`env/dist/etc/modules/` (bind-mounted from `D:\AzerothCore\env\dist\etc`,
+`env/dist/etc/modules/` (bind-mounted from `C:\nekocore\server\env\dist\etc`,
 confirmed persistent across container rebuilds, not baked into the
 image). After a restart, boot log now shows `Using modules configuration:`
 listing all 8 real `.conf` files loaded, zero "Failed open file" warnings.
@@ -869,7 +880,7 @@ project's client-patch pipeline now depends on are a static reference we
 control, not something that can move or disappear if upstream
 (`ZhengPeiRu21/mod-individual-progression`, still tracked as `upstream` on
 the local checkout for pulling future fixes) changes something. `origin`
-on `D:\AzerothCore\modules\mod-individual-progression` now points at our
+on `C:\nekocore\server\modules\mod-individual-progression` now points at our
 fork -- `install_client.py --progression-module-root` reads from that
 local checkout path either way, so this needed no tooling change, just the
 remote repointed.
@@ -1019,7 +1030,7 @@ methodically rather than guessing:
   host-persistent. Fixed by pointing `ALE.ScriptPath` at an absolute path
   (`/azerothcore/env/dist/lua_scripts`) and adding a matching
   `docker-compose.override.yml` bind mount to
-  `D:\AzerothCore\env\dist\lua_scripts` -- scripts now survive a rebuild
+  `C:\nekocore\server\env\dist\lua_scripts` -- scripts now survive a rebuild
   instead of vanishing with the old container.
 
 All temporary diagnostics removed before finishing -- `git diff --stat`
@@ -1180,3 +1191,78 @@ zero `Nekocore.EraXPRate.*`/`Nekocore.WorldEliteScaling.*` "Missing
 property" warnings, `WORLD: World Initialized In 0 Minutes 20 Seconds`,
 stable. Actually visiting `npc_xp_changer` in-game to confirm the era
 label and combined rate display correctly is on the user to verify next.
+
+## Six catalogue mods added, with a DBC merge step so they can coexist
+
+Credits and licenses for every third-party project this realm runs are in
+`THIRD-PARTY.md` -- the features below are theirs, only the integration is
+ours.
+
+At the user's request, added Breaking-News-Rewrite, mod-uac (any race /
+any class), mod-global-chat, Prestige-and-Draft-Mode, Araxia's Delves and
+Acore_ExchangeNpc. mod-worgoblin was on the list too and was **skipped**
+(user's call after being shown the trade-off): unmaintained, needs a
+signature-patched `Wow.exe` on every client, and its 30 whole-file DBC
+replacements would have wiped out both the era-talent DBCs and
+mod-individual-progression's optional set. Full details, install order and
+caveats: `docs/third-party-mods.md`.
+
+The non-obvious part was that five of the six ship server DBCs and several
+edit the *same* file (CharBaseInfo: mod-uac + Prestige; SkillRaceClassInfo:
+mod-uac + Prestige + progression) as whole-file "stock plus my rows"
+copies. Installing them as documented means the last copy wins. So:
+`tools/dbc/layer_merge.py` (schema-less, row-level merge -- string/float
+columns inferred from the stock file and cross-checked against
+AzerothCore's DBCfmt.h; also parses the WDBX CSV row lists Delves ships)
+and `tools/build_patch/build_mod_dbcs.py` (the recipe: 13 merged files
+into `data/generated/dbc/`, bind-mounted server-side and packed into the
+client's `patch-Z.mpq`). Doing it row-by-row also caught two things a
+file copy would have shipped silently: Prestige rewrites every stock
+SkillRaceClassInfo mask to -1 (only its added rows are taken), and its
+CharTitles.dbc renames "Wrathful Gladiator" to an obscenity (not taken).
+
+Everything third-party is reproducible rather than hand-copied:
+`tools/third_party/fetch.py` (pinned commits into gitignored `third-party/`
+and `server/modules/`, then `third-party-patches/<mod>/*.patch`),
+`tools/server/stage_third_party.py` (Lua, SQL, maps, module confs), and
+`sync_module.py` now stages the Lua-only mods' SQL inside our own module
+tree because AzerothCore's updater only scans compiled modules.
+
+What broke on the way, all fixed and captured as patches or staging
+rewrites so a rebuild doesn't hit them again:
+- Breaking-News-Rewrite doesn't compile against current AzerothCore
+  (`PQuery` gone, `CanPacketSend` takes `WorldPacket const&`, `Field::
+  GetString()` gone, `sWorld->GetPlayerCount()` moved to
+  `sWorldSessionMgr`, runtime `fmt::format` needs `fmt::runtime`). Its
+  README also claims the Top Guild section hides itself when
+  mod-guild-points is absent; it doesn't -- the unknown column aborts the
+  worldserver at startup. Default flipped to off in the patch.
+- Every `creature` INSERT in Delves and Prestige uses the pre-2025
+  `id1/id2/id3` columns, and two `creature_template` INSERTs still carry
+  `modelid1-4`/`scale`/`trainer_*`/immune masks. `stage_third_party.py`
+  rewrites those statements (and emits `creature_template_model` rows from
+  `modelid1`) rather than patching 16 files by hand.
+- Prestige's `dofile("lua_scripts/...config.lua")` is relative to the
+  worldserver's cwd (`/azerothcore` in the container) and can never
+  resolve; the config is loaded first by ALE's sorted load order instead.
+  Its characters SQL also had a stray `;` mid-`ALTER TABLE`.
+- Delves' mmaps are generator v19; the core wants v20 (same tile format --
+  header rewritten on copy, see the doc for the reasoning).
+
+Also found while bringing it up: `server/.env`'s new DB root password had
+not been applied inside MySQL, so the healthcheck failed and nothing
+depending on `ac-database` would start (and, one step later, the aborted
+worldserver left the realm flagged VERSION_MISMATCH, which the authserver
+now ORs with OFFLINE into the excluded `flag = 3`, crash-looping it).
+`ALTER USER` done; `docs/deploy.md` step 8 already describes this.
+
+Confirmed live: worldserver builds with all 14 modules, db-import applies
+the 16 mod-uac + 31 third-party SQL files cleanly (`Applied 22 queries`),
+`[ALE]: Executed 35 Lua scripts` with zero errors, `World Initialized In
+0 Minutes 12 Seconds`, realm registered, 688 delve creatures / 100
+race-class pairs / 5174 draft spells in the DB, merged `Map.dbc` visible in
+the container, `patch-Z.mpq` (366 MB, 334 files) + the four addons
+deployed to the test client and zipped to
+`website/downloads/nekocore-patch.zip`. Not yet verified in-game: character
+creation with a new combo, a delve teleport, Chromie, the exchange NPC, the
+character-select news panel.

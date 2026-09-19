@@ -1,0 +1,36 @@
+diff --git a/Sql & Serverside Files/SQL/Acore_characters/prestige.sql b/Sql & Serverside Files/SQL/Acore_characters/prestige.sql
+index 63657eb..f05edd4 100644
+--- a/Sql & Serverside Files/SQL/Acore_characters/prestige.sql	
++++ b/Sql & Serverside Files/SQL/Acore_characters/prestige.sql	
+@@ -11,7 +11,12 @@ CREATE TABLE IF NOT EXISTS `prestige_stats` (
+   `stored_class` TINYINT DEFAULT 0,
+   `offered_spell_1` INT DEFAULT 0,
+   `offered_spell_2` INT DEFAULT 0,
+-  `offered_spell_3` INT DEFAULT 0
++  `offered_spell_3` INT DEFAULT 0,
++  `bans` INT UNSIGNED NOT NULL DEFAULT 0,
++  `taskmaster_state` INT UNSIGNED NOT NULL DEFAULT 0,
++  `tasks_completed` INT UNSIGNED NOT NULL DEFAULT 0,
++  `taskmaster_mode` INT UNSIGNED NOT NULL DEFAULT 0,
++  `on_task` INT UNSIGNED NOT NULL DEFAULT 0
+ );
+ ################characters.drafted_spells
+ CREATE TABLE IF NOT EXISTS `drafted_spells` (
+@@ -28,15 +33,5 @@ CREATE TABLE IF NOT EXISTS `draft_bans` (
+ 
+ 
+ 
+-################UPDATEBLOCK (If you're missing these, add them)
+-ALTER TABLE `acore_characters`.`prestige_stats`
+-ADD COLUMN `bans` INT UNSIGNED NOT NULL DEFAULT 0,
+-ADD COLUMN `taskmaster_state` INT UNSIGNED NOT NULL DEFAULT 0,
+-ADD COLUMN `tasks_completed` INT UNSIGNED NOT NULL DEFAULT 0,
+-ADD COLUMN `taskmaster_mode` INT UNSIGNED NOT NULL DEFAULT 0;
+-ADD COLUMN `on_task` INT UNSIGNED NOT NULL DEFAULT 0;
+-
+-
+-
+-
+-
++-- (upstream's trailing ALTER TABLE ... ADD COLUMN block had a stray ';' and
++-- fails on a fresh DB; the columns are in the CREATE TABLE above instead.)

@@ -23,3 +23,16 @@ website/db_connect_chars.php
 website/db_connect_world.php
 website/ra_config.php
 website/mail_config.php
+website/docker.env
+website/downloads/*
+!website/downloads/.gitkeep
+
+# Third-party mods fetched at pinned commits by tools/third_party/fetch.py
+# (Delves alone is ~600 MB of maps). Never vendored into this history.
+/third-party/
+
+# The live AzerothCore server checkout (its own git repo, moved here from
+# D:\AzerothCore so everything nekocore lives in one folder). Never part of
+# this repo -- our custom code reaches it via tools/server/sync_module.py,
+# core-patches/, and server/docker-compose.override.yml.
+/server/

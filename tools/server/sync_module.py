@@ -28,6 +28,11 @@ hook that does this automatically yet -- it's a manual step for now.
 Also syncs data/sql/ (module SQL, e.g. spell_script_names bindings) and
 conf/ (module .conf.dist files) the same way, when present -- same
 underlying problem, same fix.
+
+After data/sql is recreated, the SQL of the Lua-only third-party mods
+(third-party/, see tools/third_party/fetch.py) is staged into it as
+tp_*.sql -- AzerothCore's updater only looks at data/sql under compiled
+modules, and this is the one we control. See stage_third_party.stage_sql.
 """
 from __future__ import annotations
 
@@ -36,7 +41,10 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEST = Path(r"D:\AzerothCore\modules\nekocore")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from stage_third_party import THIRD_PARTY, stage_sql  # noqa: E402
+# The live server checkout sits inside this repo folder (gitignored) -- see README.
+DEST = REPO_ROOT / "server" / "modules" / "nekocore"
 
 # (source dir in this repo, dest subdir name under DEST)
 SYNC_DIRS = [("src", "src"), ("data/sql", "data/sql"), ("conf", "conf")]
@@ -57,6 +65,11 @@ def main() -> int:
         shutil.copytree(src, dest)
         copied = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
         print(f"synced {src} -> {dest} ({len(copied)} files: {', '.join(copied)})")
+
+    if THIRD_PARTY.is_dir():
+        stage_sql(DEST / "data" / "sql")
+    else:
+        print(f"note: {THIRD_PARTY} missing, third-party SQL not staged (tools/third_party/fetch.py)")
 
     gitkeep = DEST / ".gitkeep"
     if not gitkeep.exists():

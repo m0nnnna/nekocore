@@ -1,0 +1,188 @@
+diff --git a/conf/breakingnews.conf.dist b/conf/breakingnews.conf.dist
+index 8a0bab1..c188621 100644
+--- a/conf/breakingnews.conf.dist
++++ b/conf/breakingnews.conf.dist
+@@ -71,9 +71,12 @@ BreakingNews.Show.OnlineCount = 1
+ 
+ #   BreakingNews.Show.TopGuild
+ #       Description: Show the top guild leaderboard (requires Guild Points module).
+-#       Default:     1
++#                    Leave at 0 unless mod-guild-points is installed: the query reads
++#                    guild.guild_points and an unknown column ABORTS the worldserver
++#                    at startup (it is not skipped automatically, despite the README).
++#       Default:     0
+ 
+-BreakingNews.Show.TopGuild = 1
++BreakingNews.Show.TopGuild = 0
+ 
+ #   BreakingNews.Show.TopArena
+ #       Description: Show the top 3v3 arena team leaderboard.
+diff --git a/src/BreakingNews.cpp b/src/BreakingNews.cpp
+index 50bba2d..3c7efa3 100644
+--- a/src/BreakingNews.cpp
++++ b/src/BreakingNews.cpp
+@@ -112,7 +112,7 @@ static void LoadBreakingNews()
+         return;
+     }
+ 
+-    std::string formatted = fmt::format(_midPayloadFmt, title, body);
++    std::string formatted = fmt::format(fmt::runtime(_midPayloadFmt), title, body);
+ 
+     // Write under lock so CanPacketSend never reads a half-updated string
+     std::lock_guard<std::mutex> lock(bn_Mutex);
+@@ -183,7 +183,7 @@ void BreakingNewsServerScript::SendChunkedPayload(
+ // Script hooks
+ // ---------------------------------------------------------------------------
+ 
+-bool BreakingNewsServerScript::CanPacketSend(WorldSession* session, WorldPacket& packet)
++bool BreakingNewsServerScript::CanPacketSend(WorldSession* session, WorldPacket const& packet)
+ {
+     if (!bn_Enabled)
+         return true;
+diff --git a/src/BreakingNews.h b/src/BreakingNews.h
+index 1b5c5b8..8bf08a9 100644
+--- a/src/BreakingNews.h
++++ b/src/BreakingNews.h
+@@ -49,7 +49,7 @@ class BreakingNewsServerScript : public ServerScript
+ public:
+     BreakingNewsServerScript() : ServerScript("BreakingNewsServerScript") {}
+ 
+-    bool CanPacketSend(WorldSession* session, WorldPacket& packet) override;
++    bool CanPacketSend(WorldSession* session, WorldPacket const& packet) override;
+ 
+ private:
+     std::vector<std::string> GetChunks(const std::string& s, uint8_t chunkSize);
+diff --git a/src/ServerStats.cpp b/src/ServerStats.cpp
+index f4035b2..c88806c 100644
+--- a/src/ServerStats.cpp
++++ b/src/ServerStats.cpp
+@@ -16,6 +16,7 @@
+ #include "Config.h"
+ #include "DatabaseEnv.h"
+ #include "World.h"
++#include "WorldSessionMgr.h"
+ #include <sstream>
+ 
+ // ---------------------------------------------------------------------------
+@@ -63,12 +64,12 @@ std::string ServerStats::GetTopGuilds(uint32 count)
+     // Schema: ALTER TABLE `guild` ADD COLUMN `guild_points` INT UNSIGNED ...
+     // If the column does not exist (module not installed) the query returns
+     // nullptr and this section is silently skipped.
+-    QueryResult result = CharacterDatabase.PQuery(
++    QueryResult result = CharacterDatabase.Query(
+         "SELECT g.name, g.guild_points, c.name "
+         "FROM guild g "
+         "LEFT JOIN characters c ON c.guid = g.leaderguid "
+         "WHERE g.guild_points > 0 "
+-        "ORDER BY g.guild_points DESC LIMIT %u",
++        "ORDER BY g.guild_points DESC LIMIT {}",
+         count);
+ 
+     if (!result)
+@@ -81,9 +82,9 @@ std::string ServerStats::GetTopGuilds(uint32 count)
+     do
+     {
+         Field* fields = result->Fetch();
+-        std::string guildName  = fields[0].GetString();
+-        uint32      points     = fields[1].GetUInt32();
+-        std::string leaderName = fields[2].GetString();
++        std::string guildName  = fields[0].Get<std::string>();
++        uint32      points     = fields[1].Get<uint32>();
++        std::string leaderName = fields[2].Get<std::string>();
+ 
+         ss << FormatRow("#" + std::to_string(rank++),
+                         guildName,
+@@ -99,12 +100,12 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
+     if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.TopArena", true))
+         return "";
+ 
+-    QueryResult result = CharacterDatabase.PQuery(
++    QueryResult result = CharacterDatabase.Query(
+         "SELECT at.name, at.rating, c.name "
+         "FROM arena_team at "
+         "LEFT JOIN characters c ON c.guid = at.captainguid "
+         "WHERE at.type = 3 "
+-        "ORDER BY at.rating DESC LIMIT %u",
++        "ORDER BY at.rating DESC LIMIT {}",
+         count);
+ 
+     if (!result)
+@@ -117,9 +118,9 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
+     do
+     {
+         Field* fields     = result->Fetch();
+-        std::string team  = fields[0].GetString();
+-        uint32 rating     = fields[1].GetUInt32();
+-        std::string capt  = fields[2].GetString();
++        std::string team  = fields[0].Get<std::string>();
++        uint32 rating     = fields[1].Get<uint32>();
++        std::string capt  = fields[2].Get<std::string>();
+ 
+         ss << FormatRow("#" + std::to_string(rank++),
+                         team,
+@@ -135,11 +136,11 @@ std::string ServerStats::GetTopKillers(uint32 count)
+     if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.TopKiller", true))
+         return "";
+ 
+-    QueryResult result = CharacterDatabase.PQuery(
++    QueryResult result = CharacterDatabase.Query(
+         "SELECT name, totalKills, level "
+         "FROM characters "
+         "WHERE totalKills > 0 "
+-        "ORDER BY totalKills DESC LIMIT %u",
++        "ORDER BY totalKills DESC LIMIT {}",
+         count);
+ 
+     if (!result)
+@@ -152,9 +153,9 @@ std::string ServerStats::GetTopKillers(uint32 count)
+     do
+     {
+         Field* fields    = result->Fetch();
+-        std::string name = fields[0].GetString();
+-        uint32 kills     = fields[1].GetUInt32();
+-        uint8  level     = fields[2].GetUInt8();
++        std::string name = fields[0].Get<std::string>();
++        uint32 kills     = fields[1].Get<uint32>();
++        uint8  level     = fields[2].Get<uint8>();
+ 
+         ss << FormatRow("#" + std::to_string(rank++),
+                         name,
+@@ -173,14 +174,14 @@ std::string ServerStats::GetTopAchievements(uint32 count)
+     // achievement_dbc exists in the world DB; character_achievement is in chars DB.
+     // The join must stay within the same DB — use world DB alias if needed.
+     // AzerothCore keeps achievement criteria in world DB as `achievement_dbc`.
+-    QueryResult result = CharacterDatabase.PQuery(
++    QueryResult result = CharacterDatabase.Query(
+         "SELECT c.name, COUNT(ca.achievement) AS ach_count, "
+         "SUM(IFNULL(a.points, 0)) AS total_points "
+         "FROM characters c "
+         "JOIN character_achievement ca ON c.guid = ca.guid "
+         "LEFT JOIN acore_world.achievement_dbc a ON ca.achievement = a.ID "
+         "GROUP BY c.guid "
+-        "ORDER BY total_points DESC LIMIT %u",
++        "ORDER BY total_points DESC LIMIT {}",
+         count);
+ 
+     if (!result)
+@@ -193,9 +194,9 @@ std::string ServerStats::GetTopAchievements(uint32 count)
+     do
+     {
+         Field* fields    = result->Fetch();
+-        std::string name = fields[0].GetString();
+-        uint32 achCount  = fields[1].GetUInt32();
+-        uint32 points    = fields[2].GetUInt32();
++        std::string name = fields[0].Get<std::string>();
++        uint32 achCount  = fields[1].Get<uint32>();
++        uint32 points    = fields[2].Get<uint32>();
+ 
+         ss << FormatRow("#" + std::to_string(rank++),
+                         name,
+@@ -211,7 +212,7 @@ std::string ServerStats::GetOnlinePlayers()
+     if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.OnlineCount", true))
+         return "";
+ 
+-    uint32 online = sWorld->GetPlayerCount();
++    uint32 online = sWorldSessionMgr->GetPlayerCount();
+     std::stringstream ss;
+     ss << "<p>|cff2ECC71<b>>> Online Players: "
+        << online << "|r</b></p>";
