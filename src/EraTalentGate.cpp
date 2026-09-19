@@ -50,24 +50,14 @@ namespace
     constexpr uint32 TBC_TAB_ID_MAX = 8999;
 }
 
-class EraTalentGate : public ServerScript
+namespace
 {
-public:
-    EraTalentGate() : ServerScript("EraTalentGate") { }
-
-    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
+    // Shared by both opcode paths below. Returns true if `player` is allowed
+    // to spend a point in `talentId` right now; sends the era-mismatch chat
+    // message itself before returning false, same message either opcode
+    // would have produced.
+    bool IsTalentAllowed(Player* player, WorldSession* session, uint32 talentId)
     {
-        if (packet.GetOpcode() != CMSG_LEARN_TALENT)
-            return true;
-
-        Player* player = session ? session->GetPlayer() : nullptr;
-        if (!player)
-            return true;
-
-        WorldPacket local(packet); // operator>> mutates read position -- can't read from a const&
-        uint32 talentId, requestedRank;
-        local >> talentId >> requestedRank;
-
         TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
         if (!talentInfo)
             return true; // unknown id -- let the real handler's own validation reject it
@@ -101,6 +91,60 @@ public:
         }
 
         return true; // not one of our era tabs, nothing to gate
+    }
+}
+
+class EraTalentGate : public ServerScript
+{
+public:
+    EraTalentGate() : ServerScript("EraTalentGate") { }
+
+    bool CanPacketReceive(WorldSession* session, WorldPacket const& packet) override
+    {
+        Player* player = session ? session->GetPlayer() : nullptr;
+        if (!player)
+            return true;
+
+        if (packet.GetOpcode() == CMSG_LEARN_TALENT)
+        {
+            WorldPacket local(packet); // operator>> mutates read position -- can't read from a const&
+            uint32 talentId, requestedRank;
+            local >> talentId >> requestedRank;
+            return IsTalentAllowed(player, session, talentId);
+        }
+
+        // WotLK's "preview talents" commit path -- the client queues one or
+        // more selections locally, then sends them ALL in a single packet
+        // here instead of one CMSG_LEARN_TALENT per point. Live-confirmed
+        // this is genuinely what a plain (non-shift, single-point) click
+        // sends too, not just an explicit multi-select preview: the
+        // CMSG_LEARN_TALENT-only check above let a Vanilla-progression
+        // character (Progression Level 0, confirmed via `.ip get`) spend
+        // points in a TBC-range tab with zero rejection message, because
+        // this opcode was never being inspected at all. Packet layout
+        // confirmed against HandleLearnPreviewTalents's own read order
+        // (SkillHandler.cpp): count, then that many (talentId, rank) pairs.
+        // Rejecting the whole batch if ANY entry fails era gating -- the
+        // same all-or-nothing shape CanPacketReceive already forces on a
+        // single-talent request, and simplest to reason about correctly.
+        if (packet.GetOpcode() == CMSG_LEARN_PREVIEW_TALENTS)
+        {
+            WorldPacket local(packet);
+            uint32 talentsCount;
+            local >> talentsCount;
+
+            uint32 const MaxTalentsCount = 150; // matches HandleLearnPreviewTalents's own cap
+            for (uint32 i = 0; i < talentsCount && i < MaxTalentsCount; ++i)
+            {
+                uint32 talentId, requestedRank;
+                local >> talentId >> requestedRank;
+                if (!IsTalentAllowed(player, session, talentId))
+                    return false;
+            }
+            return true;
+        }
+
+        return true;
     }
 };
 
