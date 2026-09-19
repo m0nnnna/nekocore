@@ -325,6 +325,18 @@ def stage_confs() -> None:
     for mod in CPP_MODS_WITH_CONF:
         conf_dir = SERVER / "modules" / mod / "conf"
         _require(conf_dir)
+        # Breaking News reads its HTML by a path relative to the worldserver's
+        # cwd (/azerothcore in the container) by default; ship the sample next
+        # to the conf in the host-mounted etc/modules instead (never
+        # overwritten) and point HtmlPath there in breakingnews.conf.
+        # Our own text lives in conf/breakingnews/Updates.html (tracked); it
+        # is only placed if etc/modules has none yet, so live edits survive.
+        ours = REPO_ROOT / "conf" / "breakingnews" / "Updates.html"
+        sample = SERVER / "modules" / mod / "Updates.html"
+        src = ours if ours.exists() else sample
+        if src.exists() and not (ETC_MODULES_DEST / "Updates.html").exists():
+            shutil.copyfile(src, ETC_MODULES_DEST / "Updates.html")
+            print("conf: Updates.html placed in etc/modules (HtmlPath in breakingnews.conf points there)")
         for dist in sorted(conf_dir.glob("*.conf.dist")):
             shutil.copyfile(dist, ETC_MODULES_DEST / dist.name)
             live = ETC_MODULES_DEST / dist.name[:-len(".dist")]

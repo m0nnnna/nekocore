@@ -79,9 +79,20 @@ not in the `third-party/` checkout.
 - **Breaking-News-Rewrite doesn't compile against current AzerothCore.**
   `CharacterDatabase.PQuery("... %u")` became `Query("... {}")`,
   `ServerScript::CanPacketSend` takes `WorldPacket const&`, and
-  `fmt::format` with a runtime format string needs `fmt::runtime()`. Fixed
-  in `third-party-patches/Breaking-News-Rewrite/0001-*.patch`, applied by
+  `fmt::format` with a runtime format string needs `fmt::runtime()`. Also
+  fixed in the same patch: generated stats lacked the `<html><body>` wrapper
+  SimpleHTML needs (tags showed literally), the Top Guild query aborted the
+  worldserver when mod-guild-points isn't installed (now checks the column
+  first), and a `'` in the news text broke the Lua payload (now escaped).
+  `third-party-patches/Breaking-News-Rewrite/0001-*.patch`, applied by
   `fetch.py`.
+- **Breaking News content is HTML-driven here.** `BreakingNews.HtmlPath`
+  points at `etc/modules/Updates.html` (host-mounted; the default
+  `./Updates.html` is relative to the container's cwd and never resolves),
+  `Cache = 0` so edits apply on the next login. When the file exists the
+  conf's `News.Line*` and the live stats are NOT used -- it's one or the
+  other in this module. Our text is tracked at `conf/breakingnews/
+  Updates.html`; staging places it only if etc/modules has none.
 - **Delves' mmaps are generator v19; the core wants v20.** Same Detour tile
   format, the v20 bump (#25720) only changed generator parameters for
   Blade's Edge Arena, so `stage_third_party.py maps` rewrites the header

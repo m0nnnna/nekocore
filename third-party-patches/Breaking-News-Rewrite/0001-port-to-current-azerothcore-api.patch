@@ -18,19 +18,34 @@ index 8a0bab1..c188621 100644
  #   BreakingNews.Show.TopArena
  #       Description: Show the top 3v3 arena team leaderboard.
 diff --git a/src/BreakingNews.cpp b/src/BreakingNews.cpp
-index 50bba2d..3c7efa3 100644
+index 50bba2d..dfee7c4 100644
 --- a/src/BreakingNews.cpp
 +++ b/src/BreakingNews.cpp
-@@ -112,7 +112,7 @@ static void LoadBreakingNews()
+@@ -112,7 +112,22 @@ static void LoadBreakingNews()
          return;
      }
  
 -    std::string formatted = fmt::format(_midPayloadFmt, title, body);
-+    std::string formatted = fmt::format(fmt::runtime(_midPayloadFmt), title, body);
++    // Both strings end up inside single-quoted Lua literals in the payload;
++    // a stray ' or \ in the news text would otherwise break the whole
++    // script on the client (loadstring error at character select).
++    auto luaEscape = [](std::string const& in)
++    {
++        std::string out;
++        out.reserve(in.size() + 8);
++        for (char c : in)
++        {
++            if (c == '\\' || c == '\'')
++                out += '\\';
++            out += c;
++        }
++        return out;
++    };
++    std::string formatted = fmt::format(fmt::runtime(_midPayloadFmt), luaEscape(title), luaEscape(body));
  
      // Write under lock so CanPacketSend never reads a half-updated string
      std::lock_guard<std::mutex> lock(bn_Mutex);
-@@ -183,7 +183,7 @@ void BreakingNewsServerScript::SendChunkedPayload(
+@@ -183,7 +198,7 @@ void BreakingNewsServerScript::SendChunkedPayload(
  // Script hooks
  // ---------------------------------------------------------------------------
  
@@ -53,18 +68,39 @@ index 1b5c5b8..8bf08a9 100644
  private:
      std::vector<std::string> GetChunks(const std::string& s, uint8_t chunkSize);
 diff --git a/src/ServerStats.cpp b/src/ServerStats.cpp
-index f4035b2..c88806c 100644
+index f4035b2..3cff204 100644
 --- a/src/ServerStats.cpp
 +++ b/src/ServerStats.cpp
-@@ -16,6 +16,7 @@
+@@ -15,7 +15,9 @@
+ #include "ServerStats.h"
  #include "Config.h"
  #include "DatabaseEnv.h"
++#include "Log.h"
  #include "World.h"
 +#include "WorldSessionMgr.h"
  #include <sstream>
  
  // ---------------------------------------------------------------------------
-@@ -63,12 +64,12 @@ std::string ServerStats::GetTopGuilds(uint32 count)
+@@ -58,17 +60,31 @@ std::string ServerStats::GetTopGuilds(uint32 count)
+     if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.TopGuild", true))
+         return "";
+ 
++    // An unknown column in a synchronous query aborts the worldserver, so
++    // never issue the guild_points query unless the column exists (i.e.
++    // mod-guild-points is installed). SHOW COLUMNS itself is always safe.
++    static int hasGuildPoints = -1;
++    if (hasGuildPoints < 0)
++    {
++        QueryResult col = CharacterDatabase.Query("SHOW COLUMNS FROM `guild` LIKE 'guild_points'");
++        hasGuildPoints = col ? 1 : 0;
++        if (!hasGuildPoints)
++            LOG_INFO("module", "mod-breaking-news: guild.guild_points not present (mod-guild-points not installed), Top Guild section skipped.");
++    }
++    if (!hasGuildPoints)
++        return "";
++
+     // mod-guild-points adds a `guild_points` column directly to the `guild`
+     // table (acore_characters DB) — there is no separate guild_points table.
      // Schema: ALTER TABLE `guild` ADD COLUMN `guild_points` INT UNSIGNED ...
      // If the column does not exist (module not installed) the query returns
      // nullptr and this section is silently skipped.
@@ -79,7 +115,7 @@ index f4035b2..c88806c 100644
          count);
  
      if (!result)
-@@ -81,9 +82,9 @@ std::string ServerStats::GetTopGuilds(uint32 count)
+@@ -81,9 +97,9 @@ std::string ServerStats::GetTopGuilds(uint32 count)
      do
      {
          Field* fields = result->Fetch();
@@ -92,7 +128,7 @@ index f4035b2..c88806c 100644
  
          ss << FormatRow("#" + std::to_string(rank++),
                          guildName,
-@@ -99,12 +100,12 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
+@@ -99,12 +115,12 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
      if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.TopArena", true))
          return "";
  
@@ -107,7 +143,7 @@ index f4035b2..c88806c 100644
          count);
  
      if (!result)
-@@ -117,9 +118,9 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
+@@ -117,9 +133,9 @@ std::string ServerStats::GetTopArenaTeams(uint32 count)
      do
      {
          Field* fields     = result->Fetch();
@@ -120,7 +156,7 @@ index f4035b2..c88806c 100644
  
          ss << FormatRow("#" + std::to_string(rank++),
                          team,
-@@ -135,11 +136,11 @@ std::string ServerStats::GetTopKillers(uint32 count)
+@@ -135,11 +151,11 @@ std::string ServerStats::GetTopKillers(uint32 count)
      if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.TopKiller", true))
          return "";
  
@@ -134,7 +170,7 @@ index f4035b2..c88806c 100644
          count);
  
      if (!result)
-@@ -152,9 +153,9 @@ std::string ServerStats::GetTopKillers(uint32 count)
+@@ -152,9 +168,9 @@ std::string ServerStats::GetTopKillers(uint32 count)
      do
      {
          Field* fields    = result->Fetch();
@@ -147,7 +183,7 @@ index f4035b2..c88806c 100644
  
          ss << FormatRow("#" + std::to_string(rank++),
                          name,
-@@ -173,14 +174,14 @@ std::string ServerStats::GetTopAchievements(uint32 count)
+@@ -173,14 +189,14 @@ std::string ServerStats::GetTopAchievements(uint32 count)
      // achievement_dbc exists in the world DB; character_achievement is in chars DB.
      // The join must stay within the same DB — use world DB alias if needed.
      // AzerothCore keeps achievement criteria in world DB as `achievement_dbc`.
@@ -164,7 +200,7 @@ index f4035b2..c88806c 100644
          count);
  
      if (!result)
-@@ -193,9 +194,9 @@ std::string ServerStats::GetTopAchievements(uint32 count)
+@@ -193,9 +209,9 @@ std::string ServerStats::GetTopAchievements(uint32 count)
      do
      {
          Field* fields    = result->Fetch();
@@ -177,7 +213,7 @@ index f4035b2..c88806c 100644
  
          ss << FormatRow("#" + std::to_string(rank++),
                          name,
-@@ -211,7 +212,7 @@ std::string ServerStats::GetOnlinePlayers()
+@@ -211,7 +227,7 @@ std::string ServerStats::GetOnlinePlayers()
      if (!ConfigMgr::instance()->GetOption<bool>("BreakingNews.Show.OnlineCount", true))
          return "";
  
@@ -186,3 +222,20 @@ index f4035b2..c88806c 100644
      std::stringstream ss;
      ss << "<p>|cff2ECC71<b>>> Online Players: "
         << online << "|r</b></p>";
+@@ -258,12 +274,16 @@ std::string ServerStats::GenerateHTML()
+ 
+     std::stringstream ss;
+ 
++    // SimpleHTML (ServerAlertText) only parses markup inside an
++    // <html><body> wrapper -- without it every <p>/<b> is shown literally.
++    ss << "<html><body>";
+     ss << GetOnlinePlayers();
+     ss << GetTopGuilds(topCount);
+     ss << GetTopArenaTeams(topCount);
+     ss << GetTopKillers(topCount);
+     ss << GetTopAchievements(topCount);
+     ss << GetServerNews();
++    ss << "</body></html>";
+ 
+     return ss.str();
+ }
