@@ -1,0 +1,11 @@
+diff --git a/Lua Files/prestige_and_spell_choice_config.lua b/Lua Files/prestige_and_spell_choice_config.lua
+index 496cd9e..ea33a5a 100644
+--- a/Lua Files/prestige_and_spell_choice_config.lua	
++++ b/Lua Files/prestige_and_spell_choice_config.lua	
+@@ -1,5 +1,5 @@
+ CONFIG = {
+-    MAX_LEVEL = 70,  --Level Required to venture into Prestige Mode(s) via NPC_ID Gossip
++    MAX_LEVEL = 60,  --nekocore: realm capped at 60 for now. Level Required to venture into Prestige Mode(s) via NPC_ID Gossip
+ 
+     NPC_ID = 2069426, --Default Custom Chromie npc. But can be put on any npc with a Gossip Flag
+ 

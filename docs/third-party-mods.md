@@ -1,6 +1,6 @@
 # Third-party mods
 
-Six catalogue mods added 2026-09-19, on top of the module roster the README
+Five catalogue mods added 2026-09-19 (a sixth, Delves, was installed and then dropped -- see below), on top of the module roster the README
 already covers. What each one is, where its pieces land, and the full
 command sequence to bring them up on a rebuilt box.
 
@@ -10,8 +10,15 @@ command sequence to bring them up on a rebuilt box.
 | [mod-uac](https://github.com/berubejd/mod-uac) | C++ + SQL | `server/modules/`, SQL auto-applied, `PlayerStart.CustomSpells = 1` | CharBaseInfo / SkillRaceClassInfo / CharStartOutfit rows, merged into `patch-Z.mpq` |
 | [mod-global-chat](https://github.com/azerothcore/mod-global-chat) | C++ | `server/modules/`, `etc/modules/GlobalChat.conf` | none |
 | [Prestige-and-Draft-Mode](https://github.com/Youpeoples/Prestige-and-Draft-Mode) | Lua + SQL + DBC | `lua_scripts/prestige/`, 7 SQL files, CharBaseInfo / CharTitles / SkillRaceClassInfo rows | `PrestigeSystem` addon (Draft Mode only); DBC rows in `patch-Z.mpq` |
-| [Delves](https://github.com/araxiaonline/Delves) | Lua + SQL + DBC + maps | `lua_scripts/delves/`, 23 SQL files, maps/vmaps/mmaps, 9 DBCs | `DelvesTeleporter` addon; ~300 MB of ADT/WMO/M2/BLP/MP3 + DBC rows in `patch-Z.mpq` |
 | [Acore_ExchangeNpc](https://github.com/55Honey/Acore_ExchangeNpc) | Lua + SQL | `lua_scripts/ExchangeNpc.lua`, 1 SQL file | none |
+
+Dropped after install: **Delves** (araxiaonline). It worked -- custom maps,
+DBCs, boss scripts, teleporter -- but it's level 82-85 content and the realm
+is capped at 60; a teleporter that drops level-20s into an 85 elite zone is
+worse than not having it. Everything needed to bring it back is in git
+history before the "Drop Delves" commit (fetch pin, CSV->DBC layers via
+`Merger.layer_csv`, map staging with the mmap v19->v20 header bump, client
+asset packing, `Instance.IgnoreRaid = 1`, the `/dt` vs Details! alias fix).
 
 Skipped on purpose: **mod-worgoblin**. Unmaintained, needs a
 signature-patched `Wow.exe` on every client, and its 30 whole-file DBC
@@ -21,15 +28,14 @@ user before starting.
 
 ## Why there's a DBC merge step at all
 
-Five of the six edit server DBCs, and several edit the *same* file --
-CharBaseInfo (mod-uac + Prestige), SkillRaceClassInfo (mod-uac + Prestige +
-individual-progression), and Delves' CreatureDisplayInfo/SoundEntries would
-collide with anything else touching those. Each ships "stock plus my rows"
+Three of the five edit server DBCs, and two edit the *same* files --
+CharBaseInfo (mod-uac + Prestige) and SkillRaceClassInfo (mod-uac + Prestige +
+individual-progression). Each ships "stock plus my rows"
 as a whole file, so installing them as their READMEs say means the last one
-copied wins. `tools/dbc/layer_merge.py` diffs each mod's copy (or Delves'
-WDBX CSV row lists) against the stock file and layers only the rows, and
+copied wins. `tools/dbc/layer_merge.py` diffs each mod's copy (or a WDBX CSV
+row list) against the stock file and layers only the rows, and
 `tools/build_patch/build_mod_dbcs.py` is the recipe that produces
-`data/generated/dbc/*.dbc` (13 files). Those are bind-mounted over the
+`data/generated/dbc/*.dbc` (4 files). Those are bind-mounted over the
 server's `data/dbc` (docker-compose.override.yml) and packed into the
 client's `patch-Z.mpq` -- one source, both sides.
 
@@ -49,7 +55,7 @@ Two deliberate deviations from upstream, both visible in
 python tools/third_party/fetch.py                 # pinned clones -> third-party/ and server/modules/
                                                   #   + applies third-party-patches/<mod>/*.patch
 python tools/build_patch/build_mod_dbcs.py        # -> data/generated/dbc/*.dbc
-python tools/server/stage_third_party.py          # lua, sql, maps, confs (see its docstring)
+python tools/server/stage_third_party.py          # lua, sql, confs (see its docstring)
 python tools/server/sync_module.py                # nekocore module + the staged tp_*.sql
 docker compose -f server/docker-compose.yml build ac-worldserver     # from server/: docker compose build ac-worldserver
 sh tools/server/apply_module_sql.sh server        # db-import: mod-uac's + the tp_*.sql files
@@ -58,25 +64,30 @@ python tools/install_patch/install_client.py --wotlk-root <client> --bundle-zip 
 ```
 
 `worldserver.conf` needs `PlayerStart.CustomSpells = 1` (mod-uac; without
-it Night Elf / Draenei warlocks are created without an imp),
-`Warden.Enabled = 1` (Breaking News) and `Instance.IgnoreRaid = 1` (the
-delve maps are raid-flagged instances; without it the client refuses entry
-with "you need to be in a raid group"). Both are set on the live box; `etc/`
+it Night Elf / Draenei warlocks are created without an imp) and
+`Warden.Enabled = 1` (Breaking News). Both are set on the live box; `etc/`
 is a gitignored bind mount, so on a rebuilt box set them again.
 
-`conf/lua-overrides/` (create it when needed) is copied over
-`lua_scripts/` last by `stage_third_party.py lua`, so config edits to
-`prestige/00_prestige_and_spell_choice_config.lua` or `ExchangeNpc.lua`
-(which is configured in-file: NPC location, exchange list) belong there,
-not in the `third-party/` checkout.
+Config that lives inside the mods' own files is changed via
+`third-party-patches/` (applied by `fetch.py`): Prestige's `MAX_LEVEL = 60`
+(realm cap), ExchangeNpc's spawn points (moved from Shattrath/Tanaris --
+unreachable for a Vanilla-era character -- to the capitals). Whole-file
+replacements can also go in `conf/lua-overrides/<same relative path>`,
+copied over `lua_scripts/` last by `stage_third_party.py lua`.
+
+**Service NPCs.** `data/sql/db-world/base/service_npcs.sql` spawns the
+Transmogrifier, Dungeon Dan and the XP Guide (their modules ship templates
+only) in a row next to Gabriella in Stormwind's Trade District and
+Orgrimmar's Valley of Strength; ExchangeNpc.lua spawns its two NPCs into the
+same rows. Chromie (Prestige) is at the Orgrimmar and Ironforge gates via
+that mod's own SQL.
 
 ## Things to know
 
-- **ALE vs Eluna.** All three Lua mods target Eluna; our engine is mod-ale,
+- **ALE vs Eluna.** Both Lua mods target Eluna; our engine is mod-ale,
   which upstream describes as "not compatible". Statically cross-checked
   every API name the scripts call against ALE's registered methods -- all
-  present (Delves' teleporter was even written for ALE, it uses
-  `IsFlying()` not `IsInFlight()`). Verified live by `.reload eluna` /
+  present. Verified live by `.reload eluna` /
   worldserver log showing zero Lua errors on load.
 - **Breaking-News-Rewrite doesn't compile against current AzerothCore.**
   `CharacterDatabase.PQuery("... %u")` became `Query("... {}")`,
@@ -95,19 +106,6 @@ not in the `third-party/` checkout.
   conf's `News.Line*` and the live stats are NOT used -- it's one or the
   other in this module. Our text is tracked at `conf/breakingnews/
   Updates.html`; staging places it only if etc/modules has none.
-- **Delves' mmaps are generator v19; the core wants v20.** Same Detour tile
-  format, the v20 bump (#25720) only changed generator parameters for
-  Blade's Edge Arena, so `stage_third_party.py maps` rewrites the header
-  version. If pathing in a delve ever looks wrong, regenerate the 13 maps
-  with `ac-tools mmaps_generator`.
-- **Delves references models it doesn't ship.** CreatureModelData rows for
-  `Creature\anakin`, `jangofett`, `obiwan` have no files under `MPQ/starwars/`
-  (only fetts, kyloren, mustafar, pipe, stormtrooper, vader). Those mobs
-  render as nothing/default -- upstream issue, ignored.
-- **Delves SQL is `INSERT` (not `INSERT IGNORE`) with `acore_world.`-qualified
-  table names** and entries in the 600xxx / 130000 ranges. A re-run only
-  happens if a staged file's hash changes; a duplicate-key failure there
-  means some other mod took the same ids.
 - **Prestige's `Professions_Allow_Patch.sql` is 18 MB** of `INSERT IGNORE`
   into its own `dbc_spells` table -- the first db-import after enabling it
   takes noticeably longer. That's expected.

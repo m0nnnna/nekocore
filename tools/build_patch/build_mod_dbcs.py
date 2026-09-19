@@ -1,6 +1,8 @@
 """
 Builds the merged DBC set that the third-party mods need, one output file per
 DBC that more than one party wants to edit, into data/generated/dbc/.
+(layer_merge.py also reads WDBX CSV row lists via Merger.layer_csv -- used by
+the Delves integration until it was dropped in favour of a level-60 realm.)
 
 Every output = stock 3.3.5a file (the untouched copies under
 server/env/dist/data/dbc -- the docker bind mounts overlay individual files
@@ -15,9 +17,6 @@ on with tools/dbc/layer_merge.py. Who contributes what:
                       race/class so drafted spells can be used)
   CharStartOutfit     mod-uac (74 starter-gear rows for the new combos)
   CharTitles          Prestige (12 prestige-rank titles)
-  Map, MapDifficulty, AreaTable, WorldSafelocs, LoadingScreens, ZoneMusic,
-  SoundEntries, CreatureDisplayInfo, CreatureModelData
-                      Delves (13 custom maps; shipped as WDBX CSV row lists)
 
 Deliberate deviation from Prestige's install notes: its SkillRaceClassInfo.dbc
 also rewrites the race/class masks of every one of the 241 stock rows to -1.
@@ -56,13 +55,8 @@ OUT_DIR = REPO_ROOT / "data" / "generated" / "dbc"
 THIRD_PARTY = REPO_ROOT / "third-party"
 UAC_ROOT = REPO_ROOT / "server" / "modules" / "mod-uac"
 PRESTIGE_DBC = THIRD_PARTY / "Prestige-and-Draft-Mode" / "Sql & Serverside Files" / "DBC"
-DELVES_CSV = THIRD_PARTY / "Delves" / "DBC_CSV" / "DBFilesClient"
 PROGRESSION_STAGE = REPO_ROOT / "client-patch" / "progression-optional"
 
-DELVES_FILES = [
-    "Map", "MapDifficulty", "AreaTable", "WorldSafelocs", "LoadingScreens",
-    "ZoneMusic", "SoundEntries", "CreatureDisplayInfo", "CreatureModelData",
-]
 
 
 def uac_dbc(variant: str, name: str, tmp_dir: Path) -> Path:
@@ -83,10 +77,12 @@ def main() -> int:
                     help="mod-uac client patch flavour: standard = stock client, enhanced = HD client (default standard)")
     args = ap.parse_args()
 
-    for p in (STOCK_DIR, PRESTIGE_DBC, DELVES_CSV, UAC_ROOT):
+    for p in (STOCK_DIR, PRESTIGE_DBC, UAC_ROOT):
         if not p.is_dir():
             raise SystemExit(f"missing {p}")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in OUT_DIR.glob("*.dbc"):
+        stale.unlink()  # outputs from a previous recipe (e.g. the Delves maps) must not linger
     tmp = OUT_DIR / ".uac-extract"
     tmp.mkdir(exist_ok=True)
 
@@ -120,11 +116,6 @@ def main() -> int:
     m = Merger(stock("CharTitles"))
     m.layer_dbc("prestige", PRESTIGE_DBC / "CharTitles.dbc")
     merges.append(m)
-
-    for name in DELVES_FILES:
-        m = Merger(stock(name))
-        m.layer_csv("delves", DELVES_CSV / f"{name}.csv")
-        merges.append(m)
 
     for m in merges:
         out = OUT_DIR / m.base_path.name

@@ -17,7 +17,6 @@ themselves.
 | [mod-uac](https://github.com/berubejd/mod-uac) | berubejd | see upstream repo | any race can play any class, with starter gear and trainers |
 | [mod-global-chat](https://github.com/azerothcore/mod-global-chat) | AzerothCore community; based on [mod-world-chat](https://github.com/azerothcore/mod-world-chat) by wizzymore | MIT | `.chat` world-wide chat |
 | [Prestige-and-Draft-Mode](https://github.com/Youpeoples/Prestige-and-Draft-Mode) | Youpeoples | MIT | prestige resets, Draft Mode, Chromie, the PrestigeSystem addon |
-| [Delves](https://github.com/araxiaonline/Delves) | Araxia Online | MIT | thirteen custom single-player delve maps, boss scripts, DelvesTeleporter addon |
 | [Acore_ExchangeNpc](https://github.com/55Honey/Acore_ExchangeNpc) | 55Honey (Honey) | AGPL-3.0 | the item / honor exchange NPC |
 
 Also see `docs/third-party-mods.md` for how each is wired in, and each

@@ -1,0 +1,62 @@
+diff --git a/ExchangeNpc.lua b/ExchangeNpc.lua
+index 52d700e..6e831d6 100644
+--- a/ExchangeNpc.lua
++++ b/ExchangeNpc.lua
+@@ -78,17 +78,17 @@ Config.TokenNpcOn = 0           -- spawns an NPC to trade multiple items for tok
+ Config.ItemNpcEntry = 1116001   -- DB entry. Must match this script's SQL for the world DB
+ Config.ItemNpcInstanceId = 0
+ 
+-Config.ItemNpcMapId[1] = 530       -- Position where to spawn the item exchange NPCs
+-Config.ItemNpcX[1] = -1814.3
+-Config.ItemNpcY[1] = 5292.34
+-Config.ItemNpcZ[1] = -12.42
+-Config.ItemNpcO[1] = 2.014
+-
+-Config.ItemNpcMapId[2] = 1
+-Config.ItemNpcX[2] = -7153
+-Config.ItemNpcY[2] = -3740
+-Config.ItemNpcZ[2] = 8.4
+-Config.ItemNpcO[2] = 5.06
++Config.ItemNpcMapId[1] = 1         -- nekocore: Orgrimmar, Valley of Strength service row
++Config.ItemNpcX[1] = 1607.25
++Config.ItemNpcY[1] = -4445.65
++Config.ItemNpcZ[1] = 10.87
++Config.ItemNpcO[1] = 1.738
++
++Config.ItemNpcMapId[2] = 0         -- nekocore: Stormwind, Trade District service row
++Config.ItemNpcX[2] = -8812.97
++Config.ItemNpcY[2] = 646.70
++Config.ItemNpcZ[2] = 94.56
++Config.ItemNpcO[2] = 4.4795
+ 
+ Config.ItemGossipText = 92101
+ Config.ItemGossipConfirmationText = 92102
+@@ -160,17 +160,17 @@ Config.SendAsOneMail[7] = true  -- Do all sent items fit into a single stack?
+ ------------------------------------------------------------------------------------------------
+ Config.HonorNpcEntry = 1116002   -- DB entry. Must match this script's SQL for the world DB
+ Config.HonorNpcInstanceId = 0
+-Config.HonorNpcMapId[1] = 530       -- Positions where to spawn the honor exchange NPC
+-Config.HonorNpcX[1] = -1802.67
+-Config.HonorNpcY[1] = 5296.19
+-Config.HonorNpcZ[1] = -12.42
+-Config.HonorNpcO[1] = 2.15
+-
+-Config.HonorNpcMapId[2] = 0
+-Config.HonorNpcX[2] = -14288.9
+-Config.HonorNpcY[2] = 533.9
+-Config.HonorNpcZ[2] = 8.8
+-Config.HonorNpcO[2] = 3.64
++Config.HonorNpcMapId[1] = 1         -- nekocore: Orgrimmar service row
++Config.HonorNpcX[1] = 1604.29
++Config.HonorNpcY[1] = -4446.15
++Config.HonorNpcZ[1] = 10.87
++Config.HonorNpcO[1] = 1.738
++
++Config.HonorNpcMapId[2] = 0         -- nekocore: Stormwind service row
++Config.HonorNpcX[2] = -8810.05
++Config.HonorNpcY[2] = 646.01
++Config.HonorNpcZ[2] = 94.56
++Config.HonorNpcO[2] = 4.4795
+ 
+ Config.HonorGossipText = 92103
+ Config.HonorGossipConfirmationText = 92104

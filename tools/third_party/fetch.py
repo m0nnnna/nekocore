@@ -8,10 +8,13 @@ to live inside the live AzerothCore checkout (`server/modules/`, which is
 itself gitignored and its own repo -- see README), while the Lua/SQL/asset
 mods are never compiled and just get staged from `third-party/` by
 sync_module.py / install_client.py / stage_third_party.py. Submodules can't
-point outside this repo's tree, and Delves alone is ~600 MB of maps that
-has no business in our history. One table, one command, reproducible.
+point outside this repo's tree, and some of these are hundreds of MB of
+assets that have no business in our history. One table, one command, reproducible.
 
-Deliberately NOT in this list: heyitsbench/mod-worgoblin. It's unmaintained,
+Deliberately NOT in this list: araxiaonline/Delves (installed and working
+on 2026-09-19, then removed: it's all level 82-85 content and the realm is
+capped at 60 for the foreseeable future -- see git history before commit
+"Drop Delves" to bring it back), and heyitsbench/mod-worgoblin. It's unmaintained,
 needs a signature-patched Wow.exe on every client, and its 30 whole-file DBC
 replacements (Spell, SkillLine*, TalentTab, ...) collide with the era-talent
 DBCs and mod-individual-progression's optional set. Decided 2026-09-19.
@@ -23,7 +26,7 @@ the PQuery()/non-const CanPacketSend() API that AzerothCore removed.
 
 Usage:
     python tools/third_party/fetch.py            # clone/update everything
-    python tools/third_party/fetch.py Delves     # just one
+    python tools/third_party/fetch.py mod-uac    # just one
 """
 from __future__ import annotations
 
@@ -59,12 +62,6 @@ MODS: dict[str, tuple[str, str, str]] = {
     "Prestige-and-Draft-Mode": (
         "https://github.com/Youpeoples/Prestige-and-Draft-Mode",
         "7e745f61af72c5bb38f7f221e305852e521bb97c", "data"),
-    # Araxia's 13 single-player delves: custom maps (maps/vmaps/mmaps +
-    # client ADT/WMO/M2), 9 DBCs shipped as CSV row lists, 20 world SQL files,
-    # 26 Lua boss/teleporter scripts, DelvesTeleporter addon.
-    "Delves": (
-        "https://github.com/araxiaonline/Delves",
-        "aaea411c6ea1831e19e284ed4e4445f83f796272", "data"),
     # Mat-exchange NPC. One Lua file + one world SQL.
     "Acore_ExchangeNpc": (
         "https://github.com/55Honey/Acore_ExchangeNpc",

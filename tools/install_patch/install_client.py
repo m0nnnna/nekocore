@@ -45,10 +45,8 @@ Usage:
 
 Third-party mods (tools/third_party/fetch.py) ride along automatically when
 present -- the merged DBCs from build_mod_dbcs.py (mod-uac race/class
-unlocks, Prestige titles, Delves maps), Delves' client assets (ADT/WMO/M2,
-loading screens, minimaps, music -- ~300 MB, all inside patch-Z.mpq) and the
-PrestigeSystem / DelvesTeleporter addons. One MPQ + one AddOns folder is the
-whole client install; the mods' own patch-P.mpq / patch-z.mpq are NOT used
+unlocks, Prestige titles) and the PrestigeSystem addon. One MPQ + one AddOns
+folder is the whole client install; the mods' own patch-P.mpq / patch-z.mpq are NOT used
 (their DBCs are merged into ours instead, they'd otherwise fight each other
 over CharBaseInfo).
 """
@@ -75,17 +73,10 @@ ADDONS_DIR = REPO_ROOT / "client-patch" / "Interface" / "AddOns"
 PROGRESSION_STAGE_DIR = REPO_ROOT / "client-patch" / "progression-optional"
 MOD_DBC_DIR = REPO_ROOT / "data" / "generated" / "dbc"  # build_mod_dbcs.py output
 THIRD_PARTY = REPO_ROOT / "third-party"
-DELVES_MPQ_DIR = THIRD_PARTY / "Delves" / "MPQ"
 # third-party addon folders (loose files under Interface/AddOns, like ours)
 THIRD_PARTY_ADDONS = [
     THIRD_PARTY / "Prestige-and-Draft-Mode" / "Client Side Files" / "Client Addon" / "PrestigeSystem",
-    THIRD_PARTY / "Delves" / "addon" / "DelvesTeleporter",
 ]
-# Delves ships its custom creature models under MPQ/starwars/<model>/ but its
-# CreatureModelData rows reference them as Creature/<model>/<model>.mdx, so
-# that one folder is remapped; everything else is already laid out as the
-# client expects (World/Maps/..., Interface/Glues/..., textures/minimap/..., Sound/...).
-DELVES_PATH_REMAP = {"starwars": "Creature"}
 
 # mod-individual-progression's optional/ ships these server-only DBCs in
 # dbc.7z (unconditional) plus Spell.dbc in patch-V.7z/patch-S.7z (mutually
@@ -178,15 +169,7 @@ def package_mpq() -> None:
         print(f"Including {len(mod_dbcs)} merged third-party DBCs from {MOD_DBC_DIR}")
     else:
         print("note: no merged third-party DBCs (tools/build_patch/build_mod_dbcs.py) -- "
-              "race/class unlocks, prestige titles and delves maps won't be in the client")
-    if DELVES_MPQ_DIR.is_dir():
-        n = 0
-        for f in sorted(p for p in DELVES_MPQ_DIR.rglob("*") if p.is_file()):
-            parts = list(f.relative_to(DELVES_MPQ_DIR).parts)
-            parts[0] = DELVES_PATH_REMAP.get(parts[0], parts[0])
-            files["\\".join(parts)] = f.read_bytes()
-            n += 1
-        print(f"Including {n} Delves client asset files from {DELVES_MPQ_DIR}")
+              "race/class unlocks and prestige titles won't be in the client")
     write_archive(STAGED_MPQ, files)
     print(f"Packaged {STAGED_MPQ} ({STAGED_MPQ.stat().st_size:,} bytes, {len(files)} files)")
 
