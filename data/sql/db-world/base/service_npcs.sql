@@ -16,3 +16,25 @@ INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `p
 (5300703, 190010, 1, 0, 0, 1, 1, 0, 1616.12, -4444.15, 10.87, 1.7380, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Transmogrifier'),
 (5300704, 197762, 1, 0, 0, 1, 1, 0, 1613.16, -4444.65, 10.87, 1.7380, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan'),
 (5300705, 629100, 1, 0, 0, 1, 1, 0, 1610.21, -4445.15, 10.87, 1.7380, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: XP Guide');
+
+-- XP Guide (mod-xp-changer, 629100) at every race's spawn point (5 yards
+-- ahead of where a new character appears, facing them) and beside Gabriella
+-- in the remaining capitals + Shattrath/Dalaran.
+DELETE FROM `creature` WHERE `guid` BETWEEN 5300706 AND 5300721;
+INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`, `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
+(5300706, 629100, 0, 0, 0, 1, 1, 0, -8944.95, -132.49, 83.53, 3.142, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Human start, Northshire'),
+(5300707, 629100, 1, 0, 0, 1, 1, 0, -613.52, -4251.67, 38.72, 3.142, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Orc/Troll start, Valley of Trials'),
+(5300708, 629100, 0, 0, 0, 1, 1, 0, -6235.35, 330.50, 382.76, 3.035, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Dwarf/Gnome start, Coldridge Valley'),
+(5300709, 629100, 1, 0, 0, 1, 1, 0, 10315.46, 829.69, 1326.41, 2.554, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Night Elf start, Shadowglen'),
+(5300710, 629100, 0, 0, 0, 1, 1, 0, 1672.18, 1680.42, 121.67, 5.847, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Undead start, Deathknell'),
+(5300711, 629100, 1, 0, 0, 1, 1, 0, -2912.58, -257.98, 53.00, 3.142, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Tauren start, Red Cloud Mesa'),
+(5300712, 629100, 530, 0, 0, 1, 1, 0, 10352.44, -6361.41, 33.40, 2.174, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Blood Elf start, Sunstrider Isle'),
+(5300713, 629100, 530, 0, 0, 1, 1, 0, -3964.09, -13926.84, 100.61, 5.226, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Draenei start, Ammen Vale'),
+(5300714, 629100, 0, 0, 0, 1, 1, 0, -4953.92, -932.18, 501.66, 4.775, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Ironforge, next to Gabriella'),
+(5300715, 629100, 0, 0, 0, 1, 1, 0, 1589.60, 275.33, -55.34, 0.361, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Undercity, next to Gabriella'),
+(5300716, 629100, 1, 0, 0, 1, 1, 0, 9932.70, 2507.81, 1318.17, 4.787, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Darnassus, next to Gabriella'),
+(5300717, 629100, 1, 0, 0, 1, 1, 0, -1290.68, 119.54, 131.18, 5.784, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Thunder Bluff, next to Gabriella'),
+(5300718, 629100, 530, 0, 0, 1, 1, 0, -3954.62, -11672.97, -138.76, 3.291, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Exodar, next to Gabriella'),
+(5300719, 629100, 530, 0, 0, 1, 1, 0, 9469.52, -7291.46, 14.31, 0.105, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Silvermoon, next to Gabriella'),
+(5300720, 629100, 530, 0, 0, 1, 1, 0, -1815.28, 5423.08, -12.43, 2.875, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Shattrath, next to Gabriella'),
+(5300721, 629100, 571, 0, 0, 1, 1, 0, 5788.78, 559.80, 650.66, 1.793, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Dalaran, next to Gabriella');
