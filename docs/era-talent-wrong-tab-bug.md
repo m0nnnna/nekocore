@@ -1,10 +1,95 @@
 # Bug: spending a talent point lands it in the wrong era's tab
 
-**Status: open, unsolved.** Two other real bugs in the same feature were found
-and fixed along the way (see "Already fixed" below) — this doc is about the
-one that's still broken.
+**Status: root-caused and fixed server-side (`src/EraTalentInfoRemap.cpp`),
+pending live verification.** The sections below "Diagnosis" are the
+original investigation notes, kept for history -- note that the original
+"this must be a client bug" conclusion turned out to be wrong.
 
 **Read the safety warning before touching any of this live.**
+
+## Diagnosis (2026-09-18)
+
+The client was never at fault. It sends the correct Vanilla talent id; the
+server learns the correct spell; then the server *reports it back* under
+the TBC talent id, and the client faithfully draws the point in the TBC
+tab.
+
+Why: `build_era_tree.py` reuses each era's real spell ids (a talent is
+only ported if its rank spells exist in WotLK's `Spell.dbc`), so the stock
+WotLK, Vanilla and TBC copies of a talent share spells. Checked against
+`data/generated/Talent.dbc` -- 314 of 319 Vanilla talents share at least
+one rank spell with a TBC or stock talent, e.g.:
+
+```
+vanilla rogue t1 talent 10276 rank1 spell 14162 -> also in [(276, 182), (20276, 9040)]
+```
+
+The core only knows a character's talents by **spell id**
+(`PlayerTalentMap`, `character_talent.spell`) and maps back to a
+`Talent.dbc` id via `sTalentSpellPosMap`, filled last-writer-wins in
+talent-id order (`DBCStores.cpp` ~line 498):
+
+```cpp
+sTalentSpellPosMap[talentInfo->RankID[j]] = TalentSpellPos(talentInfo->TalentID, j);
+```
+
+TBC ids (classic + 20000) are the highest, so every shared spell resolves
+to its TBC twin. `Player::BuildPlayerTalentsInfoData` (`Player.cpp`
+~line 14740, the body of `SMSG_TALENTS_INFO` and `SMSG_INSPECT_TALENT`)
+walks that map and emits the twin's id. That yields exactly the observed
+signature: a perfect 4<->7 / 5<->8 / 6<->9 swap, same tree position, on
+every class, unaffected by `tab_base` (talent ids, not tab ids, decide the
+last writer) and unaffected by `OrderIndex` (`sTalentTabPages` is only
+read by `Player::GetSpec`, not by learning or by the talents-info packet).
+
+This also means every stock-WotLK-era character was affected (their stock
+talents share spells with the TBC copies too), not just Vanilla ones.
+
+Where the original reasoning went wrong: "`character_talent` has the
+TBC-tab talent's spell id" -- that spell id is *also* the Vanilla (and
+stock) talent's spell id, so it was never evidence of which talent id the
+client sent.
+
+### Fix
+
+`src/EraTalentInfoRemap.cpp`: a `ServerScript::CanPacketSend` hook that
+rewrites the `(talentId, rank)` pairs in `SMSG_TALENTS_INFO` /
+`SMSG_INSPECT_TALENT` in place to the same-spell talent in the tab block
+the character's era owns (era from the same rewarded progression quests
+`EraTalentGate.cpp` keys off, read directly rather than via
+`isBeforeProgression()` because the login-time packet is sent before the
+player is in world). No core patch. `src/EraTalents.h` now holds the tab
+ranges and era logic shared with `EraTalentGate.cpp`.
+
+**Second face of the same collision (found on first live test):** the
+packet remap made display correct, but tier >= 2 talents still refused to
+learn. `Player::LearnTalent` (`Player.cpp` ~line 14342) computes "points
+spent in this tree" by resolving each learned spell through
+`GetTalentSpellPos()` -> TBC twin -> TBC tab, which never equals the tab
+being learned into, so the sum is 0 and the `Row * 5` tier check fails.
+Tier 1 works only because `Row == 0` skips it. That is in the learn path,
+not a packet, so it needs a core patch: `core-patches/0001-LearnTalent-
+count-spent-points-per-tab.patch` makes the count walk the target tab's
+own talents with `HasTalent()` per rank (exact regardless of shared
+spells). Applied directly in `D:\AzerothCore` (that checkout already
+carries local commits, e.g. the solo-LFG hook); re-apply with
+`git apply core-patches/*.patch` after any core update.
+
+Not attempted: de-duplicating spell ids per era (cloning every ported
+talent's spells into new `Spell.dbc` ids). That would fix it at the data
+level but is the "port missing spells" work `build_era_tree.py` already
+scopes out, and much larger than needed.
+
+### Verify
+
+0. Tier >= 2 talent in a Vanilla tab must accept a point once 5 are spent
+   in that tab (this was the case the core patch fixes).
+1. Fresh Vanilla-era character (`.ip get` = 0), open `/neko`, click a
+   tier-1 talent, `/ntd`: the point must appear on the Vanilla tab index
+   (4-6), and the TBC index (7-9) must stay 0.
+2. Relog and `/ntd` again -- the login-time `SMSG_TALENTS_INFO` goes
+   through the same remap.
+3. Same check on a stock-WotLK-progressed character in the stock frame.
 
 ## Safety warning: OrderIndex must stay 0, 1, or 2. Ever. For any tab.
 
@@ -108,7 +193,7 @@ allowing a TBC-progressed character to use TBC tabs. The server received a
 request for a specific talent id, and that talent id belongs to the TBC tab,
 even though the client displayed and the player clicked in the Vanilla tab.
 
-**This means the bug is in the client's own tabIndex → talentId resolution**
+**(Superseded -- see Diagnosis above.) This means the bug is in the client's own tabIndex → talentId resolution**
 (inside `LearnTalent`'s C-side implementation, not in Lua, not visible to
 us) — not in `EraTalentGate.cpp`'s server-side validation, which by this
 point correctly receives the (wrong) talent id and correctly allows it

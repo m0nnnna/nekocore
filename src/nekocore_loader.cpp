@@ -6,6 +6,7 @@
  */
 
 void AddSC_era_talent_gate();
+void AddSC_era_talent_info_remap();
 void AddSC_era_progression_sync();
 void AddSC_nekocore_mana_burn_scaling();
 void AddSC_raid_lock();
@@ -14,6 +15,7 @@ void AddSC_world_elite_scaling();
 void AddnekocoreScripts()
 {
     AddSC_era_talent_gate();
+    AddSC_era_talent_info_remap();
     AddSC_era_progression_sync();
     AddSC_nekocore_mana_burn_scaling();
     AddSC_raid_lock();

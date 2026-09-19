@@ -1,0 +1,43 @@
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index 453fe7492..e18bb73cb 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -14338,16 +14338,31 @@ void Player::LearnTalent(uint32 talentId, uint32 talentRank, bool command /*= fa
+     {
+         // xinef: check amount of points spent in current talent tree
+         // xinef: be smart and quick
++        // nekocore: count by walking the TARGET tab's own talents and asking
++        // HasTalent() per rank, instead of resolving each learned spell back
++        // through GetTalentSpellPos(). That map is spell-keyed and
++        // last-writer-wins, so when several talent tabs share rank spells
++        // (nekocore's per-era Vanilla/TBC copies of the stock trees do) every
++        // shared spell resolves to a talent in a DIFFERENT tab than the one
++        // being learned into, the sum comes out 0, and every tier >= 2 is
++        // rejected. Walking the tab itself is exact regardless of sharing.
+         uint32 spentPoints = 0;
+         if (talentInfo->Row > 0)
+         {
+-            PlayerTalentMap const& talentMap = GetTalentMap();
+-            for (PlayerTalentMap::const_iterator itr = talentMap.begin(); itr != talentMap.end(); ++itr)
+-                if (TalentSpellPos const* talentPos = GetTalentSpellPos(itr->first))
+-                    if (TalentEntry const* itrTalentInfo = sTalentStore.LookupEntry(talentPos->talent_id))
+-                        if (itrTalentInfo->TalentTab == talentInfo->TalentTab)
+-                            if (itr->second->State != PLAYERSPELL_REMOVED && itr->second->IsInSpec(GetActiveSpec())) // pussywizard
+-                                spentPoints += talentPos->rank + 1;
++            for (TalentEntry const* tabTalent : sTalentStore)
++            {
++                if (tabTalent->TalentTab != talentInfo->TalentTab)
++                    continue;
++
++                for (int8 rank = MAX_TALENT_RANK - 1; rank >= 0; --rank)
++                {
++                    if (tabTalent->RankID[rank] && HasTalent(tabTalent->RankID[rank], GetActiveSpec()))
++                    {
++                        spentPoints += rank + 1;
++                        break;
++                    }
++                }
++            }
+         }
+ 
+         // xinef: we do not have enough talent points to add talent of this tier

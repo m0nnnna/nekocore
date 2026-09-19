@@ -104,17 +104,12 @@ CLASS_MASKS = {slug: 1 << (cid - 1) for slug, cid in CLASSES.items()}
 # memory. This is a hard engine ceiling, not a tunable value. Reverted to
 # tree_index (0,1,2, colliding across eras) to restore stability.
 #
-# The actual bug this was trying to fix is still open: live-confirmed
-# (NekoTalentDebug /ntd, two classes) that clicking what the UI displays
-# as a Vanilla tab sends talent ids for the TBC tab in the same tree
-# position instead -- a full swap of the Vanilla (4-6) and TBC (7-9)
-# blocks. Ruled out so far: tab_base numeric ordering (swapping 8000/9000
-# made no difference) and OrderIndex collision (correct diagnosis, but the
-# fix crashes the server -- needs a different mechanism, e.g. distinguishing
-# eras by CategoryEnumID instead if LearnTalent()'s internal resolution
-# reads that safely, or accepting each class can only have 3 tabs live at
-# once and swapping which 3 are exposed based on the character's era rather
-# than exposing 9 simultaneously).
+# The bug that was trying to fix (a point spent in a Vanilla tab showing up
+# in the same-position TBC tab) turned out to be unrelated to OrderIndex or
+# tab ids at all: the eras share SPELL ids, and the core reports learned
+# talents back to the client by spell -> last-loaded talent id, i.e. the
+# TBC twin. Fixed server-side in src/EraTalentInfoRemap.cpp; see
+# docs/era-talent-wrong-tab-bug.md. Tab ids/OrderIndex here are fine as-is.
 ERA_ORDER = ["1.12.1", "2.4.3"]
 ERA_CONFIG = {
     "1.12.1": {"label": "Vanilla", "tab_base": 8000, "id_offset": 10_000, "root_arg": "vanilla_root"},
