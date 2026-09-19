@@ -94,19 +94,27 @@ CLASS_MASKS = {slug: 1 << (cid - 1) for slug, cid in CLASSES.items()}
 # Fixed processing order -- controls tab INDEX stability (see module doc
 # comment). "root_arg" is the argparse dest holding that era's client root.
 #
-# tab_base ordering is NOT cosmetic: live-confirmed (NekoTalentDebug /ntd,
-# two different classes) that LearnTalent()'s internal tabIndex resolution
-# walks a class's TalentTab.dbc rows in ID-ASCENDING order, while
-# GetTalentTabInfo()/GetNumTalentTabs() report them in the order this
-# script actually WRITES them (stock, then Vanilla, then TBC). Vanilla's
-# tab_base used to be 9000 and TBC's 8000 -- numerically backwards from
-# write order -- so clicking what the UI displayed as the 4th tab
-# (Vanilla, id 9090) actually sent the id-ascending 4th tab instead (TBC,
-# id 8090): a full swap of the Vanilla and TBC blocks, reproduced exactly
-# on both a Rogue and a Warlock. Keeping tab_base numerically increasing
-# in the SAME order eras are written here (stock ids < 8000 < 9000) makes
-# both resolutions agree. If a third era is ever added, its tab_base must
-# sort above whichever era is written last, for the same reason.
+# OrderIndex/"tabpage" MUST stay in [0,2] -- DO NOT widen this per era.
+# Tried giving each era a non-overlapping OrderIndex block (Vanilla 3-5,
+# TBC 6-8) to fix a real wrong-tab-targeting bug (see below); it crashed
+# ac-worldserver on load (SIGSEGV). Root cause: DBCStores.cpp has
+# `static uint32 sTalentTabPages[MAX_CLASSES][3]` and does
+# `sTalentTabPages[cls][talentTabInfo->tabpage] = talentTabId` with NO
+# bounds check -- any tabpage >= 3 is an out-of-bounds write into adjacent
+# memory. This is a hard engine ceiling, not a tunable value. Reverted to
+# tree_index (0,1,2, colliding across eras) to restore stability.
+#
+# The actual bug this was trying to fix is still open: live-confirmed
+# (NekoTalentDebug /ntd, two classes) that clicking what the UI displays
+# as a Vanilla tab sends talent ids for the TBC tab in the same tree
+# position instead -- a full swap of the Vanilla (4-6) and TBC (7-9)
+# blocks. Ruled out so far: tab_base numeric ordering (swapping 8000/9000
+# made no difference) and OrderIndex collision (correct diagnosis, but the
+# fix crashes the server -- needs a different mechanism, e.g. distinguishing
+# eras by CategoryEnumID instead if LearnTalent()'s internal resolution
+# reads that safely, or accepting each class can only have 3 tabs live at
+# once and swapping which 3 are exposed based on the character's era rather
+# than exposing 9 simultaneously).
 ERA_ORDER = ["1.12.1", "2.4.3"]
 ERA_CONFIG = {
     "1.12.1": {"label": "Vanilla", "tab_base": 8000, "id_offset": 10_000, "root_arg": "vanilla_root"},
@@ -188,7 +196,7 @@ def build_one_class(
         new_tab_row["RaceMask"] = wotlk_class_racemask[class_slug]
         new_tab_row["ClassMask"] = class_mask
         new_tab_row["CategoryEnumID"] = 0
-        new_tab_row["OrderIndex"] = tree_index
+        new_tab_row["OrderIndex"] = tree_index  # MUST stay 0,1,2 -- see ERA_CONFIG comment above
         new_tab_row["BackgroundFile"] = new_string_field(tab_string_builder, tab["BackgroundFile"]["value"])
         new_tab_rows.append(new_tab_row)
 
