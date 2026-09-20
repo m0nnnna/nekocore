@@ -201,6 +201,7 @@ class Merger:
         else:
             self.types = detect_types(self.base)
             self.rows = rows_from_dbc(self.base, self.types)
+            self.base_order = list(self.rows)  # file order, before any layer
         self.base_keys = set(self.rows)
         self.reports: dict[str, MergeReport] = {}
 
@@ -260,6 +261,24 @@ class Merger:
         self.reports[name] = rep
         return rep
 
+    def _base_sort_key(self):
+        """Row ordering that matches the base file. The client binary-searches
+        some DBCs by a field other than the id -- SkillRaceClassInfo is stored
+        sorted by skillID -- and a merged file re-sorted by id makes every
+        lookup miss (in-game: the Skills window lists nothing but languages).
+        Find the first field the base is sorted by (ties broken by id) and sort
+        the output the same way; a base with no sortable field keeps its own
+        order with new rows appended, which is what mod patches do too."""
+        base_rows = [self.rows[k] for k in self.base_order]
+        for f in range(len(self.types)):
+            if self.types[f] == STRING:
+                continue
+            key = lambda r, f=f: (r[f], r[0])
+            if all(key(a) <= key(b) for a, b in zip(base_rows, base_rows[1:])):
+                return lambda k, key=key: key(self.rows[k])
+        pos = {k: i for i, k in enumerate(self.base_order)}
+        return lambda k: (0, pos[k]) if k in pos else (1, k)
+
     def write(self, out_path: str | Path) -> None:
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,7 +287,7 @@ class Merger:
             body = b"".join(self.rows[k] for k in keys)
             sb = self.base.string_block or b"\0"
         else:
-            keys = sorted(self.rows)
+            keys = sorted(self.rows, key=self._base_sort_key())
             sb_parts = [b"\0"]
             offsets: dict[str, int] = {"": 0}
             size = 1
