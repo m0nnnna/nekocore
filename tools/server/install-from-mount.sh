@@ -43,6 +43,19 @@ done
 DB_ROOT_PASSWORD=$(grep -E '^DOCKER_DB_ROOT_PASSWORD=' "$SOURCE_DIR/tree/server/.env" | tail -1 | cut -d= -f2-)
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-password}"
 
+# The mysql image first runs a TEMPORARY server during initialisation (socket
+# only, port 0) and shuts it down before starting the real one -- a plain
+# `mysql -e "SELECT 1"` through docker exec succeeds against that temporary
+# server, and whatever runs next lands in the shutdown gap. So require the real
+# server's log line ("ready for connections ... port: 3306") as well.
+wait_for_mysql() {
+    i=0
+    until docker logs ac-database 2>&1 | grep -q 'ready for connections.*port: 3306'         && docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+        i=$((i+1)); [ $i -gt 120 ] && { echo "error: ac-database never became ready" >&2; docker logs --tail 20 ac-database >&2; exit 1; }
+        sleep 2
+    done
+}
+
 echo "==> copying runtime tree to $DEST_DIR (this includes 3.1 GB of client data)"
 mkdir -p "$DEST_DIR"
 cp -a "$SOURCE_DIR/tree/." "$DEST_DIR/"
@@ -61,17 +74,13 @@ cd "$DEST_DIR/server"
 echo "==> starting the database"
 docker compose up -d ac-database
 echo "    waiting for MySQL..."
-i=0
-until docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
-    i=$((i+1)); [ $i -gt 90 ] && { echo "error: ac-database never became ready" >&2; exit 1; }
-    sleep 2
-done
+wait_for_mysql
 
 echo "==> restoring databases (mirror of the dev/current production DB)"
 for db in acore_auth acore_characters acore_world; do
     printf '    %s ... ' "$db"
     docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS \`$db\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" 2>/dev/null
-    gzip -dc "$SOURCE_DIR/db/$db.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$db" 2>/dev/null
+    gzip -dc "$SOURCE_DIR/db/$db.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$db" 2>&1 | grep -v 'Using a password' || true
     echo done
 done
 

@@ -44,6 +44,19 @@ MODULE_SQL="${MODULE_SQL:-1}"
 DB_ROOT_PASSWORD=$(grep -E '^DOCKER_DB_ROOT_PASSWORD=' "$DEST_DIR/server/.env" | tail -1 | cut -d= -f2-)
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-password}"
 
+# The mysql image first runs a TEMPORARY server during initialisation (socket
+# only, port 0) and shuts it down before starting the real one -- a plain
+# `mysql -e "SELECT 1"` through docker exec succeeds against that temporary
+# server, and whatever runs next lands in the shutdown gap. So require the real
+# server's log line ("ready for connections ... port: 3306") as well.
+wait_for_mysql() {
+    i=0
+    until docker logs ac-database 2>&1 | grep -q 'ready for connections.*port: 3306'         && docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do
+        i=$((i+1)); [ $i -gt 120 ] && { echo "error: ac-database never became ready" >&2; docker logs --tail 20 ac-database >&2; exit 1; }
+        sleep 2
+    done
+}
+
 echo "==> copying configs"
 cp "$SOURCE_DIR/tree/server/docker-compose.yml" "$SOURCE_DIR/tree/server/docker-compose.override.yml" "$DEST_DIR/server/"
 cp "$SOURCE_DIR/tree/server/conf/dist/env.ac" "$DEST_DIR/server/conf/dist/"
@@ -70,14 +83,14 @@ cd "$DEST_DIR/server"
 restore_db() {
     printf '    %s ... ' "$1"
     docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$1\`; CREATE DATABASE \`$1\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" 2>/dev/null
-    gzip -dc "$SOURCE_DIR/db/$1.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$1" 2>/dev/null
+    gzip -dc "$SOURCE_DIR/db/$1.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$1" 2>&1 | grep -v 'Using a password' || true
     echo done
 }
 
 echo "==> stopping the servers for the database step"
 docker compose stop ac-worldserver ac-authserver neko-website
 docker compose up -d ac-database
-until docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+wait_for_mysql
 
 if [ "$RESTORE_DB" = "1" ]; then
     echo "==> RESTORE_DB=1: overwriting ALL databases from the mount (accounts, characters and news included)"
