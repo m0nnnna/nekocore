@@ -2,8 +2,14 @@
 # Updates an existing NekoCore production install from a newer drop on the
 # deploy share. Counterpart of install-from-mount.sh; run ON the production box:
 #
-#   sh /opt/nekocore/update-from-mount.sh            # images + configs
-#   RESTORE_DB=1 sh /opt/nekocore/update-from-mount.sh   # ...and overwrite the DB with the dumps
+#   sh /opt/nekocore/update-from-mount.sh                  # images + configs + module SQL
+#   RESTORE_WORLD=1 sh /opt/nekocore/update-from-mount.sh  # ...and replace acore_world with the dump (the normal content update)
+#   RESTORE_DB=1 sh /opt/nekocore/update-from-mount.sh     # ...and overwrite ALL THREE DBs (pre-launch only: kills accounts/characters/news)
+#
+# Database ownership (docs/deploy.md): acore_world is built on the dev box and
+# shipped like an image -- never edit it on this box, RESTORE_WORLD replaces
+# it. acore_auth and acore_characters belong to this box (accounts, players,
+# web_news) and only ever receive module SQL through ac-db-import.
 #
 # What it does:
 #   1. Copies compose files, server confs, DBC inputs, website downloads and
@@ -28,6 +34,7 @@ set -eu
 SOURCE_DIR="${SOURCE_DIR:-/mnt/deploy/nekocore-deploy}"
 DEST_DIR="${DEST_DIR:-/opt/nekocore}"
 RESTORE_DB="${RESTORE_DB:-0}"
+RESTORE_WORLD="${RESTORE_WORLD:-0}"
 CLIENT_DATA="${CLIENT_DATA:-0}"
 MODULE_SQL="${MODULE_SQL:-1}"
 
@@ -60,22 +67,29 @@ done
 
 cd "$DEST_DIR/server"
 
+restore_db() {
+    printf '    %s ... ' "$1"
+    docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$1\`; CREATE DATABASE \`$1\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" 2>/dev/null
+    gzip -dc "$SOURCE_DIR/db/$1.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$1" 2>/dev/null
+    echo done
+}
+
+echo "==> stopping the servers for the database step"
+docker compose stop ac-worldserver ac-authserver neko-website
+docker compose up -d ac-database
+until docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+
 if [ "$RESTORE_DB" = "1" ]; then
-    echo "==> RESTORE_DB=1: stopping servers and overwriting the databases from the mount"
-    docker compose stop ac-worldserver ac-authserver neko-website
-    docker compose up -d ac-database
-    until docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do sleep 2; done
-    for db in acore_auth acore_characters acore_world; do
-        printf '    %s ... ' "$db"
-        docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "DROP DATABASE IF EXISTS \`$db\`; CREATE DATABASE \`$db\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" 2>/dev/null
-        gzip -dc "$SOURCE_DIR/db/$db.sql.gz" | docker exec -i ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" "$db" 2>/dev/null
-        echo done
-    done
-elif [ "$MODULE_SQL" = "1" ]; then
-    echo "==> applying module SQL to the live databases (ac-db-import)"
-    docker compose stop ac-worldserver ac-authserver
-    docker compose up -d ac-database
-    until docker exec ac-database mysql -uroot -p"$DB_ROOT_PASSWORD" -e "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+    echo "==> RESTORE_DB=1: overwriting ALL databases from the mount (accounts, characters and news included)"
+    for db in acore_auth acore_characters acore_world; do restore_db "$db"; done
+elif [ "$RESTORE_WORLD" = "1" ]; then
+    echo "==> RESTORE_WORLD=1: replacing acore_world from the mount (auth/characters untouched)"
+    restore_db acore_world
+fi
+if [ "$MODULE_SQL" = "1" ]; then
+    # After a restore this is a no-op for whatever the dump already carried;
+    # for auth/characters it is how new module tables/columns arrive.
+    echo "==> applying module SQL (ac-db-import)"
     docker compose up --exit-code-from ac-db-import ac-db-import
 fi
 

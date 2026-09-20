@@ -125,6 +125,19 @@ Combat logging (`src/NekoLog.cpp`, website Logs/Rankings) needs nothing
 beyond the module SQL that `apply_module_sql.sh` already applies
 (`nekolog.sql`, `nekolog_rank.sql`); `Nekocore.Log.*` defaults to on.
 
+## Who owns which database (the update contract)
+
+| DB | Owner | How changes reach live |
+|---|---|---|
+| `acore_world` | dev box -- an artifact, like the images | replaced wholesale from the drop's dump (`RESTORE_WORLD=1`). Never edit it on live: no `.npc add`, no GM `.reload`-and-forget -- do it here and ship it. |
+| `acore_characters` | live (players) | never overwritten after launch; only module SQL via `ac-db-import` (tracked in its `updates` table, idempotent). |
+| `acore_auth` | live (accounts, `web_news`, tokens, realm row) | same as characters; `apply_realmlist.sh` re-asserts the prod row. |
+
+This is why neither MySQL needs to accept connections from the other machine:
+the share carries the dump, the box applies it, and the two live-owned
+databases only ever receive the same migrations the dev database already went
+through. `RESTORE_DB=1` (all three) is a pre-launch-only reset.
+
 ## Deploy drops on the share
 
 `Y:\nekocore-deploy\` (`\deploy\deploy`) holds the full production drop --
