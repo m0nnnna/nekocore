@@ -307,6 +307,110 @@ function nl_rank_points(PDO $db): array
     return $cache = $out;
 }
 
+/* ---------- admin: deleted characters ---------- */
+
+/**
+ * Player actors whose character no longer exists: char_guid was zeroed by the
+ * server on delete, or points at a guid that is gone (deleted before the
+ * unlink hook existed). One row per distinct name, with what they left behind.
+ */
+function nl_deleted_players(PDO $db): array
+{
+    return $db->query("SELECT a.name, MAX(a.class) AS class, MAX(a.level) AS level, COUNT(DISTINCT a.run_id) AS runs,
+                              (SELECT COUNT(*) FROM nekolog_rank k WHERE k.name = a.name AND k.guid <> 0
+                                   AND (k.char_guid = 0 OR k.char_guid NOT IN (SELECT guid FROM characters))) AS kills,
+                              MIN(r.started_at) AS first_seen, MAX(r.started_at) AS last_seen
+                       FROM nekolog_actor a JOIN nekolog_run r ON r.id = a.run_id
+                       WHERE a.kind = 1 AND (a.char_guid = 0 OR a.char_guid NOT IN (SELECT guid FROM characters))
+                         AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.name = a.name)
+                       GROUP BY a.name ORDER BY last_seen DESC")->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Wipe everything a deleted character left in the logs: their events (as
+ * source or target), their pets' events, their ranking rows and actor rows.
+ * Encounters/runs left with no players at all are removed entirely. Other
+ * people's kills stay, minus this character's contribution.
+ * Returns counts for the flash message.
+ */
+function nl_wipe_deleted_player(PDO $db, string $name): array
+{
+    // Only characters that really are gone -- never a live one by name.
+    $st = $db->prepare("SELECT COUNT(*) FROM characters WHERE name = :n");
+    $st->execute(['n' => $name]);
+    if ((int)$st->fetchColumn() > 0) {
+        throw new RuntimeException("$name still exists; delete the character first.");
+    }
+    $st = $db->prepare("SELECT run_id, guid FROM nekolog_actor WHERE kind = 1 AND name = :n");
+    $st->execute(['n' => $name]);
+    $actors = $st->fetchAll(PDO::FETCH_ASSOC);
+    $out = ['events' => 0, 'kills' => 0, 'encounters' => 0, 'runs' => 0];
+    if (!$actors) return $out;
+
+    $db->beginTransaction();
+    try {
+        foreach ($actors as $a) {
+            $run = (int)$a['run_id']; $g = $a['guid'];
+            // Their pets in this run share the wipe.
+            $st = $db->prepare("SELECT guid FROM nekolog_actor WHERE run_id = :r AND owner = :g");
+            $st->execute(['r' => $run, 'g' => $g]);
+            $guids = array_merge([$g], $st->fetchAll(PDO::FETCH_COLUMN));
+            $in = implode(',', array_fill(0, count($guids), '?'));
+
+            $st = $db->prepare("DELETE FROM nekolog_event WHERE run_id = ? AND (src IN ($in) OR dst IN ($in))");
+            $st->execute(array_merge([$run], $guids, $guids));
+            $out['events'] += $st->rowCount();
+
+            $st = $db->prepare("DELETE k FROM nekolog_rank k JOIN nekolog_encounter e ON e.id = k.enc_id WHERE e.run_id = ? AND k.guid = ?");
+            $st->execute([$run, $g]);
+            $out['kills'] += $st->rowCount();
+
+            $st = $db->prepare("DELETE p FROM nekolog_participant p JOIN nekolog_encounter e ON e.id = p.enc_id WHERE e.run_id = ? AND p.guid = ?");
+            $st->execute([$run, $g]);
+
+            $st = $db->prepare("DELETE FROM nekolog_actor WHERE run_id = ? AND guid IN ($in)");
+            $st->execute(array_merge([$run], $guids));
+
+            // Encounters in this run with no player left: gone, with everything under them.
+            $st = $db->prepare("SELECT e.id FROM nekolog_encounter e WHERE e.run_id = ?
+                                AND NOT EXISTS (SELECT 1 FROM nekolog_participant p WHERE p.enc_id = e.id)
+                                AND NOT EXISTS (SELECT 1 FROM nekolog_event ev JOIN nekolog_actor a ON a.run_id = ev.run_id AND a.guid = ev.src
+                                                WHERE ev.enc_id = e.id AND a.kind IN (1, 2))");
+            $st->execute([$run]);
+            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $encId) {
+                foreach (['nekolog_event' => 'enc_id', 'nekolog_participant' => 'enc_id', 'nekolog_rank' => 'enc_id', 'nekolog_encounter' => 'id'] as $tbl => $col) {
+                    $db->prepare("DELETE FROM $tbl WHERE $col = ?")->execute([$encId]);
+                }
+                $out['encounters']++;
+            }
+            // Creatures nobody in the run fought any more.
+            $db->prepare("DELETE a FROM nekolog_actor a WHERE a.run_id = ? AND a.kind = 3
+                          AND NOT EXISTS (SELECT 1 FROM nekolog_event ev WHERE ev.run_id = a.run_id AND (ev.src = a.guid OR ev.dst = a.guid))")->execute([$run]);
+            // Run with no encounters left: gone too.
+            $st = $db->prepare("SELECT COUNT(*) FROM nekolog_encounter WHERE run_id = ?");
+            $st->execute([$run]);
+            if ((int)$st->fetchColumn() === 0) {
+                $db->prepare("DELETE FROM nekolog_actor WHERE run_id = ?")->execute([$run]);
+                $db->prepare("DELETE FROM nekolog_event WHERE run_id = ?")->execute([$run]);
+                $db->prepare("DELETE FROM nekolog_run WHERE id = ?")->execute([$run]);
+                $out['runs']++;
+            } else {
+                $st = $db->prepare("SELECT COUNT(*) FROM nekolog_encounter WHERE run_id = ? AND result = 1");
+                $st->execute([$run]);
+                $kills = (int)$st->fetchColumn();
+                $st = $db->prepare("SELECT COUNT(*) FROM nekolog_encounter WHERE run_id = ? AND result = 2");
+                $st->execute([$run]);
+                $db->prepare("UPDATE nekolog_run SET kills = ?, wipes = ? WHERE id = ?")->execute([$kills, (int)$st->fetchColumn(), $run]);
+            }
+        }
+        $db->commit();
+    } catch (Throwable $t) {
+        $db->rollBack();
+        throw $t;
+    }
+    return $out;
+}
+
 /** Names of the players in a set of kills, for the speed table. */
 function nl_kill_members(PDO $db, array $encIds): array
 {
