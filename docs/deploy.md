@@ -141,7 +141,9 @@ through. `RESTORE_DB=1` (all three) is a pre-launch-only reset.
 ## Deploy drops on the share
 
 `Y:\nekocore-deploy\` (`\deploy\deploy`) holds the full production drop --
-images, DB dumps, runtime tree, `install-from-mount.sh` / `update-from-mount.sh`.
+images, DB dumps, runtime tree, `install-from-mount.sh` / `update-from-mount.sh` /
+`update-website-from-mount.sh` (website only: loads `images/website.tar` and recreates
+`neko-website` without stopping the realm; its dev-side pair is `build_website_drop.sh`).
 Its README covers running it on the box and carries a per-drop changelog.
 Rebuild it with `sh tools/server/build_deploy_drop.sh` (the box scripts are
 versioned in `tools/server/` and copied onto the share by it). `wow1.nekos.farm` is the realm's

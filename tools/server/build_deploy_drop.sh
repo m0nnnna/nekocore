@@ -87,7 +87,7 @@ cp "$REPO/website/downloads/realmlist.wtf" "$T/website/downloads/"
 [ -f "$REPO/website/downloads/nekocore-patch.zip" ] && cp "$REPO/website/downloads/nekocore-patch.zip" "$T/website/downloads/"
 
 # box scripts
-cp "$REPO"/tools/server/install-from-mount.sh "$REPO"/tools/server/update-from-mount.sh "$DROP_DIR/" 2>/dev/null || true
+cp "$REPO"/tools/server/install-from-mount.sh "$REPO"/tools/server/update-from-mount.sh "$REPO"/tools/server/update-website-from-mount.sh "$DROP_DIR/" 2>/dev/null || true
 
 echo "==> done: $(date '+%Y-%m-%d %H:%M')"
 echo "    now update $DROP_DIR/README.md with what changed in this drop"

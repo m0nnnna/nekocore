@@ -67,7 +67,7 @@ cp -a "$SOURCE_DIR/tree/client-patch/." "$DEST_DIR/client-patch/"
 cp -a "$SOURCE_DIR/tree/tools/." "$DEST_DIR/tools/"
 cp -a "$SOURCE_DIR/tree/website/downloads/." "$DEST_DIR/website/downloads/"
 cp "$SOURCE_DIR/tree/website/docker.env.example" "$DEST_DIR/website/" 2>/dev/null || true
-cp "$SOURCE_DIR/install-from-mount.sh" "$SOURCE_DIR/update-from-mount.sh" "$DEST_DIR/" 2>/dev/null || true
+cp "$SOURCE_DIR/install-from-mount.sh" "$SOURCE_DIR/update-from-mount.sh" "$SOURCE_DIR/update-website-from-mount.sh" "$DEST_DIR/" 2>/dev/null || true
 if [ "$CLIENT_DATA" = "1" ]; then
     echo "==> re-copying client data (3.1 GB)"
     cp -a "$SOURCE_DIR/tree/server/env/dist/data/." "$DEST_DIR/server/env/dist/data/"
