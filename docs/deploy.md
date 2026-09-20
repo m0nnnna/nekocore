@@ -129,6 +129,8 @@ beyond the module SQL that `apply_module_sql.sh` already applies
 
 `Y:\nekocore-deploy\` (`\deploy\deploy`) holds the full production drop --
 images, DB dumps, runtime tree, `install-from-mount.sh` / `update-from-mount.sh`.
-Its README covers running it on the box. `wow1.nekos.farm` is the realm's
+Its README covers running it on the box and carries a per-drop changelog.
+Rebuild it with `sh tools/server/build_deploy_drop.sh` (the box scripts are
+versioned in `tools/server/` and copied onto the share by it). `wow1.nekos.farm` is the realm's
 public name (resolves to the VPS); `wow.nekos.farm` is the website, routed
 through the VPS nginx to this stack's port 8088.
