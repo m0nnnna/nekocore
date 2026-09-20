@@ -1,0 +1,8 @@
+downloads/
+docker.env
+docker.env.example
+db_connect*.php
+mail_config.php
+ra_config.php
+EULA.txt
+*.md

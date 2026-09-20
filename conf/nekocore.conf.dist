@@ -105,3 +105,27 @@ Nekocore.WorldEliteScaling.MaxMultiplier = 1.5
 Nekocore.EraXPRate.Vanilla = 1.0
 Nekocore.EraXPRate.TBC = 1.0
 Nekocore.EraXPRate.WotLK = 1.0
+
+# Nekocore.Log.Enable
+#
+#        Description: Server-side combat logging for every dungeon and raid instance (src/NekoLog.cpp).
+#                      Damage, healing, deaths, casts, auras and boss encounter boundaries are
+#                      written to the characters database (nekolog_* tables) and shown on the
+#                      website's Logs pages. Nothing comes from the client, so nothing can be
+#                      edited. Live-reloadable.
+#
+#        Default:     1 - enabled
+#
+Nekocore.Log.Enable = 1
+
+# Nekocore.Log.Auras
+# Nekocore.Log.Casts
+#
+#        Description: Also record aura apply/remove and player spell casts. These are the bulk
+#                      of the row volume; turn them off if the database is filling up faster
+#                      than wanted. Damage/heal/death are always recorded while logging is on.
+#
+#        Default:     1 / 1
+#
+Nekocore.Log.Auras = 1
+Nekocore.Log.Casts = 1

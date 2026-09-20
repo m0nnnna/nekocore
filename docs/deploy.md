@@ -114,7 +114,16 @@ The third-party mods are reproducible instead of hand-copied:
 `build_mod_dbcs.py`, `stage_third_party.py`, `sync_module.py` -- the full
 order is in `docs/third-party-mods.md`. Two `worldserver.conf` settings
 they need (`PlayerStart.CustomSpells = 1`, `Warden.Enabled = 1`) live in
-the gitignored `etc/`, so re-set them on a fresh copy.
+the gitignored `etc/`, so re-set them on a fresh copy. Same for the solo
+difficulty tuning in `etc/modules/AutoBalance.conf`: every
+`AutoBalance.InflectionPoint*.CurveFloor` (dungeon, heroic, raid, raid
+heroic) is `0.5` on the live box (solo = 56% of a full group's boss
+health/damage instead of the module's default 12%); the `.dist` file still
+says `0.0`.
+
+Combat logging (`src/NekoLog.cpp`, website Logs/Rankings) needs nothing
+beyond the module SQL that `apply_module_sql.sh` already applies
+(`nekolog.sql`, `nekolog_rank.sql`); `Nekocore.Log.*` defaults to on.
 
 ## Deploy drops on the share
 

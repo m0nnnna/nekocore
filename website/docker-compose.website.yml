@@ -1,0 +1,41 @@
+# NekoCore website as a service in the AzerothCore compose stack.
+#
+# Paste the `neko-website` service into server/docker-compose.override.yml
+# (paths below are relative to that file). It joins ac-network, so it reaches
+# the database and both servers by service name.
+#
+#   docker compose build neko-website && docker compose up -d neko-website
+#
+# Credentials and site settings live in website/docker.env (copy
+# docker.env.example). The site listens on DOCKER_WEB_EXTERNAL_PORT (8088).
+
+services:
+  neko-website:
+    container_name: neko-website
+    image: nekocore/website:latest
+    build:
+      context: ../website
+    networks:
+      - ac-network
+    restart: unless-stopped
+    ports:
+      - ${DOCKER_WEB_EXTERNAL_PORT:-8088}:80
+    env_file:
+      - ../website/docker.env
+    environment:
+      # Same root login the ac-* containers use; override in docker.env to use
+      # a limited account instead.
+      NEKO_DB_HOST: ac-database
+      NEKO_DB_USER: root
+      NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:-password}
+      NEKO_AUTH_HOST: ac-authserver
+      NEKO_WORLD_HOST: ac-worldserver
+      NEKO_REALMLIST_URL: downloads/realmlist.wtf
+      NEKO_CLIENT_URL: downloads/nekocore.zip
+    volumes:
+      # Client zip + realmlist.wtf served at /downloads/. Put the files in
+      # website/downloads on the host (not committed -- see .gitignore).
+      - ../website/downloads:/var/www/html/downloads:ro
+    depends_on:
+      ac-database:
+        condition: service_healthy
