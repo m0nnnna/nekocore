@@ -5,7 +5,6 @@ require __DIR__ . '/inc/layout.php';
 neko_private('srp6.php');
 neko_private('tokens.php');
 neko_private('mailer.php');
-neko_private('mail_config.php');
 
 $verification_ttl_hours = 24;
 $errors = [];
@@ -69,7 +68,7 @@ if ($neko['registrations_open'] && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $verify_url = neko_base_url() . '/verify_email.php?token=' . urlencode($token);
 
-                        $mailer = new SmtpMailer($mail_config);
+                        $mailer = new SmtpMailer(neko_mail_config());
                         $mailer->send(
                             $email,
                             'Verify your NekoCore account',

@@ -17,7 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             news_db()->prepare("UPDATE web_news SET pinned = 1 - pinned WHERE id = :id")->execute(['id' => $id]);
             admin_flash($post['pinned'] ? 'Unpinned “' . $post['title'] . '”.' : 'Pinned “' . $post['title'] . '”.');
         } elseif ($action === 'publish') {
-            news_db()->prepare("UPDATE web_news SET status = 'published', published_at = COALESCE(published_at, NOW()) WHERE id = :id")->execute(['id' => $id]);
+            // A scheduled post already has a (future) published_at -- "now" has
+            // to win over it, or the post stays hidden until its old date.
+            news_db()->prepare("UPDATE web_news SET status = 'published', published_at = IF(published_at IS NULL OR published_at > NOW(), NOW(), published_at) WHERE id = :id")->execute(['id' => $id]);
             admin_flash('Published “' . $post['title'] . '”.');
         } elseif ($action === 'unpublish') {
             news_db()->prepare("UPDATE web_news SET status = 'draft' WHERE id = :id")->execute(['id' => $id]);

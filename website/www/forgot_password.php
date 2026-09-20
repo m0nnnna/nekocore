@@ -4,7 +4,6 @@ require __DIR__ . '/inc/layout.php';
 
 neko_private('tokens.php');
 neko_private('mailer.php');
-neko_private('mail_config.php');
 
 $errors = [];
 $submitted = false;
@@ -52,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!empty($account['email'])) {
                         $reset_url = neko_base_url() . '/reset_password.php?token=' . urlencode($token);
                         try {
-                            $mailer = new SmtpMailer($mail_config);
+                            $mailer = new SmtpMailer(neko_mail_config());
                             $mailer->send(
                                 $account['email'],
                                 'Reset your NekoCore password',

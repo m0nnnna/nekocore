@@ -43,7 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $form[$k] = trim((string)($_POST[$k] ?? ''));
     }
     $form['pinned'] = isset($_POST['pinned']) ? 1 : 0;
-    if ($action === 'publish') {
+    if ($action === 'publish_now') {
+        // Ignore whatever date is in the form -- the post goes live this minute.
+        $form['status'] = 'published';
+        $form['published_at'] = '';
+    } elseif ($action === 'publish') {
         $form['status'] = 'published';
     } elseif ($action === 'draft') {
         $form['status'] = 'draft';
@@ -195,6 +199,9 @@ require __DIR__ . '/_bar.php';
 
             <div class="form-actions">
                 <button class="btn btn--coral" type="submit" name="action" value="publish"><?= neko_icon('check') ?> <?= $form['status'] === 'published' ? 'Save changes' : 'Publish' ?></button>
+                <?php if ($form['published_at'] !== '' && strtotime($form['published_at']) > time()): ?>
+                    <button class="btn btn--ice" type="submit" name="action" value="publish_now">Publish now</button>
+                <?php endif; ?>
                 <button class="btn btn--ghost" type="submit" name="action" value="draft"><?= $form['status'] === 'published' ? 'Unpublish to draft' : 'Save draft' ?></button>
                 <span class="spacer"></span>
                 <?php if ($post && !$confirm_delete): ?>

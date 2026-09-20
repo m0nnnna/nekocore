@@ -28,7 +28,7 @@ $neko = [
     'world_host'         => neko_env('NEKO_WORLD_HOST', '108.174.48.199'),
     'world_port'         => (int)neko_env('NEKO_WORLD_PORT', '8085'),
     'registrations_open' => neko_env('NEKO_REGISTRATIONS_OPEN', '1') !== '0',
-    'discord_url'        => neko_env('NEKO_DISCORD_URL', 'https://discord.gg/Qdwtxews27'),
+    'discord_url'        => neko_env('NEKO_DISCORD_URL', 'https://discord.gg/W9cMwT4Ar9'),
     'wiki_url'           => neko_env('NEKO_WIKI_URL', 'https://wiki.nekos.farm/en/WoW'),
     'realmlist_file'     => neko_env('NEKO_REALMLIST_URL', 'realmlist.wtf'),
     'client_zip'         => neko_env('NEKO_CLIENT_URL', 'nekocore.zip'),
@@ -47,6 +47,21 @@ function e($value): string
 function neko_private(string $file): void
 {
     require_once NEKO_PRIVATE . DIRECTORY_SEPARATOR . $file;
+}
+
+/**
+ * The SMTP settings from the private mail_config.php. That file just sets
+ * $mail_config, and a require inside neko_private() would leave it in that
+ * function's scope -- so it is read here and handed back explicitly.
+ */
+function neko_mail_config(): array
+{
+    static $config = null;
+    if ($config === null) {
+        require NEKO_PRIVATE . DIRECTORY_SEPARATOR . 'mail_config.php';
+        $config = $mail_config;
+    }
+    return $config;
 }
 
 /**
