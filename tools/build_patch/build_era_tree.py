@@ -35,9 +35,18 @@ real Blizzard-authored data, prerequisite-before-dependent tier ordering is
 already correct by construction.
 
 Still applies, same as before (see merge_talents.py's doc comment for why):
-  - A talent is only included if every rank's spell id already exists in
-    WotLK's Spell.dbc (skipped transitively otherwise) -- porting the
+  - A talent's rank spells must already exist in WotLK's Spell.dbc --
+    Player::LearnTalent silently no-ops on an unknown spell id. Porting the
     missing spells into Spell.dbc is real, separate follow-on work.
+    A talent is kept with the LEADING ranks that do exist (WotLK squashed
+    a lot of 5-rank Classic talents down to 3 ranks, keeping the rank 1-3
+    spell ids and deleting ranks 4-5 -- e.g. Paladin's Improved Devotion
+    Aura / Redoubt). Dropping the whole talent for that used to leave the
+    Vanilla Protection Paladin tab with an EMPTY tier 0, which makes the
+    entire tab unspendable (the 5-point gate for tier 1 can never be met),
+    not merely incomplete. A dependent talent's PrereqRank is clamped to
+    the truncated prerequisite's new max rank. Only a talent whose rank 1
+    (or a middle rank) is missing is dropped, transitively.
   - Talent.dbc rows for one tab must be one contiguous, (tier,column)-sorted
     block in the file, or the retail client's talent frame fails to render
     that tab at all -- live-confirmed this session. Since we're
@@ -202,14 +211,24 @@ def build_one_class(
 
         unsafe_ids: set[int] = set()
         included: list[dict] = []
+        kept_ranks: dict[int, tuple[int, ...]] = {}  # classic id -> ranks actually emitted
         for row in tab_talents:
             rid = row["ID"]
-            row_ranks = ranks_of(row)
-            missing = [s for s in row_ranks if s != 0 and s not in wotlk_spell_ids]
-            if missing:
-                print(f"  {rid} SKIPPED: rank spell(s) {missing} do not exist in WotLK's Spell.dbc")
+            row_ranks = [s for s in ranks_of(row) if s != 0]
+            # Longest leading run of ranks whose spells WotLK still has.
+            present: list[int] = []
+            for spell in row_ranks:
+                if spell not in wotlk_spell_ids:
+                    break
+                present.append(spell)
+            if not present:
+                print(f"  {rid} SKIPPED: rank 1 spell {row_ranks[0]} does not exist in WotLK's Spell.dbc")
                 unsafe_ids.add(rid)
                 continue
+            if len(present) < len(row_ranks):
+                print(f"  {rid} TRUNCATED to {len(present)}/{len(row_ranks)} ranks: "
+                      f"spell(s) {row_ranks[len(present):]} do not exist in WotLK's Spell.dbc")
+            kept_ranks[rid] = tuple(present)
             included.append(row)
             mapping[rid] = rid + id_offset
 
@@ -239,15 +258,23 @@ def build_one_class(
             new_row["TabID"] = assigned_tab_id
             new_row["TierID"] = row["TierID"]
             new_row["ColumnIndex"] = row["ColumnIndex"]
-            for f in [f"SpellRank_{i}" for i in range(9)]:
-                new_row[f] = row[f]
+            ranks = kept_ranks[rid]
+            for i in range(9):
+                new_row[f"SpellRank_{i}"] = ranks[i] if i < len(ranks) else 0
             depends_on = row["PrereqTalent_0"]
             if depends_on:
                 translated = mapping.get(depends_on)
                 if translated is None:
                     raise RuntimeError(f"talent {rid} depends on {depends_on}, not included")
                 new_row["PrereqTalent_0"] = translated
-                new_row["PrereqRank_0"] = row["PrereqRank_0"]
+                # PrereqRank is 0-indexed in Talent.dbc (rank 5 of 5 -> 4).
+                # If the prerequisite lost ranks above, the original value
+                # may now be unreachable -- clamp to its new top rank.
+                prereq_max = len(kept_ranks[depends_on]) - 1
+                new_row["PrereqRank_0"] = min(row["PrereqRank_0"], prereq_max)
+                if new_row["PrereqRank_0"] != row["PrereqRank_0"]:
+                    print(f"  {rid} prereq rank clamped {row['PrereqRank_0']} -> {prereq_max} "
+                          f"(prerequisite {depends_on} was truncated)")
             new_talent_rows.append(new_row)
         # already sorted by (TierID, ColumnIndex) since tab_talents was
 
