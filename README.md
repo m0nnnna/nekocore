@@ -91,6 +91,19 @@ deciding which tab-set to show based on the viewing character's own era.
   talents make it through than the additive approach could fit: Druid went
   from 8 (additive, collision-limited) to 33 (dedicated tabs, spell-existence-limited)
   for Vanilla.
+  - **2026-09-21:** that ceiling is mostly gone. WotLK squashed many 5-rank
+    Classic talents to 3 ranks (rank 1-3 spell ids kept, 4-5 deleted) and
+    dropping the whole talent for that left the Vanilla Paladin Protection
+    tab with an empty tier 0 -- an *unspendable* tab, since the 5-point
+    gate for tier 1 could never be met (19 other era tabs had the same
+    class of hole higher up). Talents are now kept with the leading ranks
+    that exist, and `tools/build_patch/port_era_spells.py` ports the rank
+    spells WotLK deleted from the 2.4.3 client (225 of them; the 60
+    Vanilla-only ones already gone by TBC are reported, not ported) into
+    `data/generated/Spell.dbc` -- the file the realm bind-mounts AND the
+    client MPQ carries, so they stay in lockstep. `install_client.py
+    --build` runs the port before the tree build. Every era tab is now
+    reachable end to end: 784 -> 1003 era talents.
 - **A custom Lua UI** (not built yet) replaces Blizzard's stock talent
   frame, so *we* control which tab-set displays based on the character's
   actual era (read from `mod-individual-progression`, which already tracks
