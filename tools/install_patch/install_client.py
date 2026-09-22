@@ -93,6 +93,28 @@ PROGRESSION_DBC_FILES = [
 PROGRESSION_SPELL_ARCHIVE = {"V": "patch-V.7z", "S": "patch-S.7z"}
 
 
+GENERATED_SPELL = GENERATED_DIR / "Spell.dbc"  # port_era_spells.py output
+
+
+def port_spells(vanilla_root: Path | None, tbc_root: Path, wotlk_root: Path) -> None:
+    """Rescues the era talent rank spells WotLK deleted (from the 2.4.3
+    client) into data/generated/Spell.dbc, on top of mod-individual-
+    progression's staged Spell.dbc so its mana-cost edits are kept. Must run
+    BEFORE build_era_tree.py, which only emits talents whose spells exist."""
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "tools" / "build_patch" / "port_era_spells.py"),
+        "--wotlk-root", str(wotlk_root),
+        "--tbc-root", str(tbc_root),
+        "--base-spell", str(PROGRESSION_STAGE_DIR / "Spell.dbc"),
+        "--out", str(GENERATED_SPELL),
+    ]
+    if vanilla_root:
+        cmd += ["--vanilla-root", str(vanilla_root)]
+    print("+ " + " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
 def build_dbcs(vanilla_root: Path | None, tbc_root: Path | None, wotlk_root: Path, classes: list[str]) -> None:
     cmd = [
         sys.executable,
@@ -101,6 +123,10 @@ def build_dbcs(vanilla_root: Path | None, tbc_root: Path | None, wotlk_root: Pat
         "--out-dbc-dir", str(GENERATED_DIR),
         "--out-mapping-dir", str(REPO_ROOT / "data" / "vanilla"),
     ]
+    if GENERATED_SPELL.exists():
+        cmd += ["--spell-dbc", str(GENERATED_SPELL)]
+    else:
+        print("note: no ported Spell.dbc (needs --tbc-root) -- talents whose spells WotLK deleted stay out")
     if vanilla_root:
         cmd += ["--vanilla-root", str(vanilla_root)]
     if tbc_root:
@@ -153,12 +179,16 @@ def package_mpq() -> None:
         "DBFilesClient\\Talent.dbc": talent.read_bytes(),
         "DBFilesClient\\TalentTab.dbc": talent_tab.read_bytes(),
     }
-    if PROGRESSION_STAGE_DIR.is_dir():
-        spell = PROGRESSION_STAGE_DIR / "Spell.dbc"
-        if spell.exists():
-            files["DBFilesClient\\Spell.dbc"] = spell.read_bytes()
-            print("Including progression Spell.dbc in the client MPQ "
-                  "(server-only DBCs -- SkillLine etc. -- don't need a client copy)")
+    # Spell.dbc: the ported one (progression's edits + rescued era talent
+    # spells) when built, else progression's alone. Same file the realm
+    # bind-mounts (server/docker-compose.override.yml) -- they must match.
+    if GENERATED_SPELL.exists():
+        files["DBFilesClient\\Spell.dbc"] = GENERATED_SPELL.read_bytes()
+        print(f"Including ported Spell.dbc ({GENERATED_SPELL}) in the client MPQ")
+    elif (PROGRESSION_STAGE_DIR / "Spell.dbc").exists():
+        files["DBFilesClient\\Spell.dbc"] = (PROGRESSION_STAGE_DIR / "Spell.dbc").read_bytes()
+        print("Including progression Spell.dbc in the client MPQ "
+              "(server-only DBCs -- SkillLine etc. -- don't need a client copy)")
     mod_dbcs = sorted(MOD_DBC_DIR.glob("*.dbc")) if MOD_DBC_DIR.is_dir() else []
     for dbc in mod_dbcs:
         key = f"DBFilesClient\\{dbc.name}"
@@ -237,12 +267,16 @@ def main() -> int:
 
     if not args.addons_only:
         classes = args.classes or ALL_CLASSES
-        if args.build:
-            if not args.vanilla_root and not args.tbc_root:
-                raise SystemExit("--build requires --vanilla-root and/or --tbc-root")
-            build_dbcs(args.vanilla_root, args.tbc_root, args.wotlk_root, classes)
+        if args.build and not args.vanilla_root and not args.tbc_root:
+            raise SystemExit("--build requires --vanilla-root and/or --tbc-root")
+        # progression's Spell.dbc is the base the spell port builds on, so
+        # (re)stage it first when asked
         if args.progression_module_root:
             extract_progression_dbcs(args.progression_module_root, args.progression_variant)
+        if args.build:
+            if args.tbc_root:
+                port_spells(args.vanilla_root, args.tbc_root, args.wotlk_root)
+            build_dbcs(args.vanilla_root, args.tbc_root, args.wotlk_root, classes)
         package_mpq()
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 

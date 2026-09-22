@@ -294,6 +294,9 @@ def main() -> int:
         "--class", dest="classes", action="append", required=True, choices=sorted(CLASSES),
         help="repeatable -- all classes given in ONE run land in the same output file",
     )
+    ap.add_argument("--spell-dbc", type=Path,
+                    help="WotLK Spell.dbc to check rank spells against instead of the stock client's -- "
+                         "pass port_era_spells.py's output so the talents it rescued are emitted")
     ap.add_argument("--out-dbc-dir", required=True, type=Path)
     ap.add_argument("--out-mapping-dir", required=True, type=Path)
     args = ap.parse_args()
@@ -306,7 +309,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp_dir = Path(td)
         wotlk_talents = load("3.3.5a", "Talent.dbc", args.wotlk_root, tmp_dir)
-        wotlk_spell = load("3.3.5a", "Spell.dbc", args.wotlk_root, tmp_dir)
+        if args.spell_dbc:
+            wotlk_spell = read_dbc(args.spell_dbc, BUILD_SCHEMAS["3.3.5a"]["Spell.dbc"], LOCALE_COUNT["3.3.5a"])
+            print(f"  3.3.5a Spell.dbc: {args.spell_dbc} ({len(wotlk_spell.rows)} rows)", file=sys.stderr)
+        else:
+            wotlk_spell = load("3.3.5a", "Spell.dbc", args.wotlk_root, tmp_dir)
         wotlk_tabs = load("3.3.5a", "TalentTab.dbc", args.wotlk_root, tmp_dir)
         era_src = {
             era: (load(era, "Talent.dbc", era_roots[era], tmp_dir), load(era, "TalentTab.dbc", era_roots[era], tmp_dir))

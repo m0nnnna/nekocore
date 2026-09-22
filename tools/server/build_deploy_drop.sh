@@ -70,7 +70,7 @@ fi
 # data/: generated DBCs the override bind-mounts + the module SQL
 rm -rf "$T/data/generated" "$T/data/sql"
 mkdir -p "$T/data/generated/dbc"
-cp "$REPO"/data/generated/Talent.dbc "$REPO"/data/generated/TalentTab.dbc "$T/data/generated/"
+cp "$REPO"/data/generated/Talent.dbc "$REPO"/data/generated/TalentTab.dbc "$REPO"/data/generated/Spell.dbc "$T/data/generated/"
 cp "$REPO"/data/generated/dbc/*.dbc "$T/data/generated/dbc/"
 cp -a "$REPO/data/sql" "$T/data/sql"
 
