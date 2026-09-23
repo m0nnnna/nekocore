@@ -1,10 +1,20 @@
 # Go-live checklist
 
-This box **is** the production realm. "Deploying" means taking the stack in
-`server/` from its dev identity to the real one and putting the website in
-front of players. Nothing moves to another machine.
+> **Superseded opening (kept because the rest of this section still applies).**
+> This said "this box **is** the production realm ... nothing moves to another
+> machine", which was true up to 2026-09-18. It is not any more: since drop 1
+> the realm runs on a **separate production box** that installs from
+> `Y:\nekocore-deploy\` (see "Deploy drops on the share" at the end). This box
+> (`C:\nekocore`) is the **dev box** -- it builds the images, owns
+> `acore_world`, and runs its own local realm for testing. Its
+> `acore_auth.realmlist` row is *supposed* to be the dev row; the prod row
+> belongs on the production box. "Deploying" now means
+> `sh tools/server/build_deploy_drop.sh` here, then
+> `update-from-mount.sh` there. The steps below describe the in-place go-live
+> on a single box and are still the reference for what the drop scripts
+> automate.
 
-## Topology (as verified 2026-09-18)
+## Topology (as verified 2026-09-18, single-box era)
 
 ```
 players ──> 108.174.48.199 (Ubuntu VPS, nginx + VPN proxy)
@@ -124,6 +134,116 @@ says `0.0`.
 Combat logging (`src/NekoLog.cpp`, website Logs/Rankings) needs nothing
 beyond the module SQL that `apply_module_sql.sh` already applies
 (`nekolog.sql`, `nekolog_rank.sql`); `Nekocore.Log.*` defaults to on.
+
+## How a .sql file reaches a database (and what stops it wrecking one)
+
+The short version: **the only thing that ever migrates a database is a
+deliberate `ac-db-import` run.** Neither server does it, so no restart can
+change your schema.
+
+### The path
+
+1. You write the file in this repo under
+   `data/sql/db-<auth|characters|world>/base/*.sql`. **The directory name is
+   the only thing that picks the database** -- nothing inside the file does.
+   A file in the wrong folder runs against the wrong DB.
+2. `python tools/server/sync_module.py` copies `data/sql/` into
+   `server/modules/nekocore/data/sql/` as real files. Not optional and not
+   cosmetic: Docker's build context cannot follow the junction, which once cost
+   a whole session of silently-empty builds (see the README).
+3. `sh tools/server/apply_module_sql.sh server` does two steps in one call:
+   `docker compose build ac-db-import`, then
+   `docker compose up --exit-code-from ac-db-import ac-db-import`. The rebuild
+   is the step people skip -- without it you run whatever SQL was baked into
+   the last image, which may predate everything you just wrote.
+4. AzerothCore's updater walks every module's `data/sql/db-*/{base,updates}/`
+   and applies what it hasn't seen.
+
+On the production box the same thing happens inside
+`update-from-mount.sh`, which runs `ac-db-import` once after loading the
+images (its step "applying module SQL"). So module SQL rides along with a
+normal drop update -- `RESTORE_WORLD=1` is only for wholesale world-DB content
+replacement, not for getting a new table or NPC out there.
+
+### What protects the databases
+
+**Neither server applies SQL.** `worldserver.conf` says
+`Updates.EnableDatabases = 7`, but `AC_UPDATES_ENABLE_DATABASES=0` is baked
+into the upstream worldserver image and environment beats config. The startup
+log says so out loud:
+
+```
+> Config: Found config value 'Updates.EnableDatabases' from environment variable 'AC_UPDATES_ENABLE_DATABASES'.
+> AUTOUPDATER: Automatic database updates are disabled for all databases in the config! This is not recommended!
+```
+
+That warning is a *good* thing here. It means one door to the schema, opened on
+purpose, instead of every restart being a migration.
+
+**Applied files are hash-tracked.** Each database has an `updates` table:
+`name` (primary key), `hash` (SHA1 of the file), `state`
+(`RELEASED|CUSTOM|MODULE|ARCHIVED|PENDING`), `timestamp`, `speed`. Ours land as
+`MODULE`. A file whose name and hash are already there is skipped, so
+re-running `apply_module_sql.sh` is cheap and safe.
+
+**The sharp edge: editing a `base/` file re-runs the whole file.** The hash
+changes, so the updater reapplies it from the top -- observed live on the
+2026-09-22 deploy:
+
+```
+>> Applying update "nekocore_challenge.sql" '89F070B'...
+>> Reapplying update "nekolog.sql" '32D89BD' -> '13FCB07' (it changed)...
+```
+
+So everything in `base/` must be safe to run again, every time it is touched.
+The rules that follow from that, and which this repo's files already keep:
+
+- `CREATE TABLE IF NOT EXISTS`, never bare `CREATE TABLE`.
+- To change rows, `DELETE` a range **we own** then `INSERT` it -- e.g.
+  `DELETE FROM creature WHERE guid BETWEEN 5300722 AND 5300723`. Never an
+  unqualified `DELETE FROM`, never `TRUNCATE`.
+- **No `ALTER TABLE ... ADD COLUMN`.** MySQL 8 has no `IF NOT EXISTS` for it,
+  so the second run errors and aborts the import. This is exactly why the
+  challenge/combat-log link is a `log_run_id` column on the *new*
+  `nekocore_challenge_run` table rather than a `challenge_id` column added to
+  the existing `nekolog_run`.
+- No `DROP` of anything a player owns. A derived table that rebuilds itself
+  (`nekolog_rank`) may say so in a comment; real data may not.
+- Keep one concern per file. A reapplied file re-runs *everything* in it.
+
+**Failures are actually noticed.** `--exit-code-from ac-db-import` exists
+because a plain `docker compose up` exits 0 no matter how the service died --
+a bad SQL file would otherwise look exactly like success.
+
+**Back up first, and freeze first.** `tools/server/backup_db.sh <db> server`
+for all three before any import (it runs `mysqldump` inside the container, so
+it needs nothing installed). Stop `ac-worldserver`/`ac-authserver` first so the
+characters DB is not moving under the import. Note that
+`--exit-code-from` implies `--abort-on-container-exit`: when `ac-db-import`
+finishes, Compose stops the containers **that same command started**. With
+`ac-database` already up from an earlier `up` it is left alone (verified on the
+2026-09-22 deploy -- only `ac-db-import` stopped), but do not count on that
+from a cold stack.
+
+**Restarting the worldserver alone is cheap; restarting the authserver is
+not.** The authserver sets `REALM_FLAG_OFFLINE` on *every* realm at startup
+(`authserver/Main.cpp`) and each worldserver only clears its own on the
+`UpdateUptimeInterval` tick -- 10 minutes here, measured at 480s on
+2026-09-22. So a code-only worldserver deploy has no offline window at all,
+while bouncing both can grey the realm out in the client list for up to ten
+minutes. `UPDATE realmlist SET flag = 0 WHERE id = 1;` clears it immediately
+once the worldserver reports `World Initialized`.
+
+### The five-line version
+
+```
+# edit data/sql/db-<db>/base/<file>.sql   (idempotent, non-destructive, one concern)
+python tools/server/sync_module.py
+sh tools/server/backup_db.sh acore_auth server && ... characters && ... world
+cd server && docker compose stop ac-worldserver ac-authserver
+sh ../tools/server/apply_module_sql.sh .    # build + run ac-db-import, exit code honoured
+docker compose up -d ac-authserver ac-worldserver
+```
 
 ## Who owns which database (the update contract)
 
