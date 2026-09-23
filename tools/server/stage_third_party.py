@@ -289,6 +289,58 @@ def stage_confs() -> None:
                 print(f"conf: {live.name} kept, {dist.name} refreshed")
 
 
+# --- Settings we own inside mods we don't ship -------------------------------
+
+# AutoBalance.conf lives in the gitignored server checkout, not in this repo,
+# but one of its settings is load-bearing for our own challenge-run module and
+# has to survive a rebuilt box: AutoBalance.LevelScaling is AutoBalance's single
+# realm-wide switch for level scaling, and every level-scaling branch inside it
+# is gated on that one global. src/ChallengeScaling.cpp needs it armed to be
+# able to pin a challenge instance's creatures to the party's bracket -- and
+# then keeps it a no-op for every other dungeon itself (see
+# Nekocore.Challenge.SuppressLevelScalingOutsideChallenges). Without this step
+# a fresh checkout silently gets "challenge runs, but the mobs are still level
+# 18", which the worldserver does at least log an error about at startup.
+OWNED_SETTINGS: dict[str, dict[str, str]] = {
+    "AutoBalance.conf": {"AutoBalance.LevelScaling": "1"},
+}
+
+
+def stage_owned_settings() -> None:
+    for conf_name, settings in OWNED_SETTINGS.items():
+        live = ETC_MODULES_DEST / conf_name
+        if not live.exists():
+            print(f"settings: {conf_name} not present yet -- run the confs step first")
+            continue
+
+        text = live.read_text(encoding="utf-8")
+        changed = False
+        for key, value in settings.items():
+            # Match the setting only where it is actually set (start of line,
+            # optional spaces around '='), never inside the doc comments above
+            # it, which mention the same name.
+            pattern = re.compile(rf"^([ \t]*){re.escape(key)}([ \t]*)=([ \t]*)(\S*)[ \t]*$", re.MULTILINE)
+            match = pattern.search(text)
+            if not match:
+                appended = (
+                    "\n\n# Set by nekocore staging (see tools/server/stage_third_party.py)\n"
+                    f"{key} = {value}\n"
+                )
+                text = text.rstrip("\n") + appended
+                changed = True
+                print(f"settings: {conf_name}: {key} added as {value}")
+                continue
+            if match.group(4) == value:
+                print(f"settings: {conf_name}: {key} already {value}")
+                continue
+            text = text[:match.start()] + f"{match.group(1)}{key}{match.group(2)}={match.group(3)}{value}" + text[match.end():]
+            changed = True
+            print(f"settings: {conf_name}: {key} {match.group(4)} -> {value}")
+
+        if changed:
+            live.write_text(text, encoding="utf-8")
+
+
 # -----------------------------------------------------------------------------
 
 def _require(*paths: Path) -> None:
@@ -297,7 +349,7 @@ def _require(*paths: Path) -> None:
         raise SystemExit("missing " + ", ".join(map(str, missing)) + " -- run tools/third_party/fetch.py")
 
 
-STEPS = {"lua": stage_lua, "sql": stage_sql, "confs": stage_confs}
+STEPS = {"lua": stage_lua, "sql": stage_sql, "confs": stage_confs, "settings": stage_owned_settings}
 
 
 def main(argv: list[str]) -> int:

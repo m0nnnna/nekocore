@@ -188,13 +188,21 @@ private:
     // reverse direction (player damaging the creature) is intentionally
     // left alone, same reasoning as skipping armor scaling above: health +
     // outgoing damage are the two levers this was built for.
+    //
+    // The map check is not redundant with OnUnitEnterCombat's. The multiplier
+    // is read out of AutoBalanceCreatureInfo, which is mod-autobalance's OWN
+    // struct on the creature (same CustomData key on purpose, see the header
+    // comment) -- so inside a dungeon this reads a multiplier AutoBalance set
+    // for itself and has already applied in its own ABUnitScript, and
+    // applying it again here would square it. Only creatures on a real
+    // continent have a multiplier that belongs to this module.
     void ScaleOutgoingAmount(Unit* target, Unit* source, int32& amount)
     {
         if (!target || !source || !target->IsPlayer())
             return;
 
         Creature* creature = source->ToCreature();
-        if (!creature)
+        if (!creature || !creature->GetMap() || !creature->GetMap()->IsWorldMap())
             return;
 
         float multiplier = creature->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo")->ScaledDamageMultiplier;

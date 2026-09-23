@@ -2,6 +2,7 @@
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 require __DIR__ . '/inc/logs.php';
+require __DIR__ . '/inc/challenges.php';
 
 $db = neko_db('chars');
 $error = $db ? null : 'The character database is not reachable right now.';
@@ -11,13 +12,15 @@ $encId = (int)($_GET['enc'] ?? 0);
 $view = in_array($_GET['view'] ?? '', ['damage', 'healing', 'taken', 'deaths'], true) ? $_GET['view'] : 'damage';
 
 $run = null; $encounters = []; $enc = null; $actors = []; $names = [];
-$rows = []; $deaths = []; $participants = []; $elig = null;
+$rows = []; $deaths = []; $participants = []; $elig = null; $challenge = null; $challengeMembers = [];
 
 if (!$error) {
     try {
         $run = $runId ? nl_run($db, $runId) : null;
         if ($run) {
             $encounters = nl_encounters($db, $runId);
+            $challenge = ch_run_for_log($db, $runId);
+            $challengeMembers = $challenge ? ch_run_members($db, (int)$challenge['id']) : [];
             $actors = nl_actors($db, $runId);
             if ($encId) {
                 foreach ($encounters as $e) if ((int)$e['id'] === $encId) $enc = $e;
@@ -66,7 +69,7 @@ $kindForNames = $view === 'healing' ? NL_HEAL : NL_DAMAGE;
 $rateLabel = $view === 'healing' ? 'HPS' : ($view === 'taken' ? 'DTPS' : 'DPS');
 $extraLabel = $view === 'healing' ? 'Overheal' : 'Mitigated';
 
-neko_page_start(['title' => $title, 'active' => 'logs']);
+neko_page_start(['title' => $title, 'active' => $challenge ? 'challenges' : 'logs']);
 ?>
 
 <?php if ($error): ?>
@@ -76,11 +79,28 @@ neko_page_start(['title' => $title, 'active' => 'logs']);
 
 <div class="page-head nl-head">
     <div>
-        <p class="nl-crumb"><a href="logs.php">Logs</a> / <a href="logs.php?map=<?= (int)$run['map_id'] ?>"><?= e($run['map_name']) ?></a></p>
+        <p class="nl-crumb"><?php if ($challenge): ?><a href="challenges.php">Challenges</a> / <a href="challenges.php?map=<?= (int)$run['map_id'] ?>"><?= e($run['map_name']) ?></a><?php else: ?><a href="logs.php">Logs</a> / <a href="logs.php?map=<?= (int)$run['map_id'] ?>"><?= e($run['map_name']) ?></a><?php endif; ?></p>
         <h1><?= e($run['map_name']) ?> <span class="nl-sub"><?= e(nl_difficulty($run)) ?></span></h1>
         <p><?= e(date('l, F j, Y \a\t H:i', (int)$run['started_at'])) ?>
            &middot; <?= (int)$run['kills'] ?> boss<?= (int)$run['kills'] === 1 ? '' : 'es' ?> down, <?= (int)$run['wipes'] ?> wipe<?= (int)$run['wipes'] === 1 ? '' : 's' ?>
            <?= (int)$run['ended_at'] ? '&middot; ' . e(nl_duration(((int)$run['ended_at'] - (int)$run['started_at']) * 1000)) . ' from first pull to instance reset' : '&middot; <span class="nl-live">still live</span>' ?></p>
+        <?php if ($challenge): ?>
+        <p class="notice-line"><strong>Challenge run</strong> &middot; tier <?= (int)$challenge['tier'] ?> &middot;
+           <?= e(ch_bracket_name((int)$challenge['bracket'])) ?>, everything at level <?= (int)$challenge['bracket'] ?> &middot;
+           <?= e(ch_bonus((float)$challenge['health_mult'], (float)$challenge['damage_mult'])) ?> &middot;
+           <?= e(ch_result_label((int)$challenge['result'])) ?></p>
+        <?php if ($challengeMembers): ?>
+        <p class="notice-line">Party:
+            <?php foreach ($challengeMembers as $i => $m): ?><?= $i ? ', ' : '' ?><span style="color: <?= e(nl_class_color((int)$m['class'])) ?>"><?= e($m['name']) ?></span> <?php
+                // tier_after is only filled when the run closes, so a live run
+                // shows what everyone walked in on and nothing else.
+                $before = (int)$m['tier_before']; $after = (int)$m['tier_after'];
+                $settled = (int)$challenge['result'] !== CH_IN_PROGRESS;
+                echo ($settled && $after !== $before) ? '(tier ' . $before . ' &rarr; ' . $after . ')' : '(tier ' . $before . ')';
+            ?><?php endforeach; ?>
+        </p>
+        <?php endif; ?>
+        <?php endif; ?>
     </div>
 </div>
 

@@ -12,6 +12,8 @@ void AddSC_nekocore_mana_burn_scaling();
 void AddSC_raid_lock();
 void AddSC_world_elite_scaling();
 void AddSC_nekolog();
+void AddSC_nekocore_challenge_run();
+void AddSC_nekocore_challenge_scaling();
 
 void AddnekocoreScripts()
 {
@@ -22,4 +24,6 @@ void AddnekocoreScripts()
     AddSC_raid_lock();
     AddSC_world_elite_scaling();
     AddSC_nekolog();
+    AddSC_nekocore_challenge_run();
+    AddSC_nekocore_challenge_scaling();
 }

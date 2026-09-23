@@ -129,3 +129,132 @@ Nekocore.Log.Enable = 1
 #
 Nekocore.Log.Auras = 1
 Nekocore.Log.Casts = 1
+
+# Nekocore.Challenge.Enable
+#
+#        Description: Challenge runs (src/ChallengeRun.cpp, src/ChallengeScaling.cpp). An opt-in
+#                      difficulty mode for 5-man dungeons you have outgrown: arm one at the
+#                      Challenge Keeper (entry 9000101, beside Dungeon Dan in both capitals) and
+#                      the instance you walk into pins every creature to your era's level cap
+#                      (60 Vanilla / 70 TBC / 80 WotLK) and raises its health and damage. Clearing
+#                      it raises the tier for next time; wiping lowers it. Every run is recorded
+#                      in the characters DB (nekocore_challenge_*) and shown on the website's
+#                      Challenges page, separately from the ordinary combat logs.
+#
+#                      IMPORTANT: the level part of this needs AutoBalance.LevelScaling = 1 in
+#                      etc/modules/AutoBalance.conf. That is AutoBalance's own realm-wide switch
+#                      and there is no per-instance version of it -- so it gets armed there and
+#                      neutered everywhere except challenge runs by
+#                      Nekocore.Challenge.SuppressLevelScalingOutsideChallenges below. Without
+#                      it, challenge runs still get their health/damage bonuses but the mobs stay
+#                      at their own level, and the worldserver logs an error saying so at startup.
+#
+#        Default:     1 - enabled
+#
+Nekocore.Challenge.Enable = 1
+
+# Nekocore.Challenge.HealthStep
+# Nekocore.Challenge.DamageStep
+#
+#        Description: How much harder each clear makes the next run, per tier, on the two levers
+#                      that matter: creature maximum health and the damage creatures deal to
+#                      players. Tier N multiplies them by (1 + step * N), so at the defaults tier
+#                      5 is +75% health and +50% damage, tier 10 is +150% and +100%.
+#
+#                      Health deliberately climbs faster than damage: that makes a tier a longer
+#                      fight before it is a lethal one, which is a DPS-and-endurance check rather
+#                      than a one-shot check. Both compose on top of whatever AutoBalance is
+#                      already doing for party size, they don't replace it.
+#
+#                      These are read fresh every time, never stored per tier, so changing them
+#                      and running `.reload config` retunes every existing tier on the realm
+#                      instead of leaving old characters on old numbers. (The multipliers a run
+#                      actually used are recorded on its own row, so past runs keep their real
+#                      difficulty.)
+#
+#        Default:     0.15 / 0.10
+#
+Nekocore.Challenge.HealthStep = 0.15
+Nekocore.Challenge.DamageStep = 0.10
+
+# Nekocore.Challenge.MaxTier
+#
+#        Description: Highest tier a character can reach per dungeon. 0 is an open-ended ladder --
+#                      the wall is wherever a group actually stops being able to clear it, which
+#                      is the point of the mode. Set a number if you would rather "maxed out" be
+#                      a definite achievement.
+#
+#        Default:     0 - no ceiling
+#
+Nekocore.Challenge.MaxTier = 0
+
+# Nekocore.Challenge.WipePenalty
+#
+#        Description: Whether a wipe (everyone in the instance dead at once) costs a tier. With
+#                      this on, a character's tier is a claim they can currently beat it; with it
+#                      off the ladder only ever goes up and a wipe just means retrying the same
+#                      tier. Either way `best_tier` -- the hardest tier actually cleared, which is
+#                      what the website's ladder ranks on -- never goes down.
+#
+#        Default:     1 - a wipe drops the tier by one (floor 0)
+#
+Nekocore.Challenge.WipePenalty = 1
+
+# Nekocore.Challenge.ArmedMinutes
+#
+#        Description: How long an armed challenge waits before it lapses, in minutes. It is armed
+#                      at the Keeper and spent by walking into the instance, so this only has to
+#                      cover the trip there. 0 disables the timeout entirely (it still clears on
+#                      logout).
+#
+#        Default:     30
+#
+Nekocore.Challenge.ArmedMinutes = 30
+
+# Nekocore.Challenge.SuppressLevelScalingOutsideChallenges
+#
+#        Description: Keeps AutoBalance's level scaling off everywhere except challenge runs, by
+#                      pushing the per-map skip ranges wide on every other dungeon (see the long
+#                      comment at the top of src/ChallengeScaling.cpp for the mechanism).
+#
+#                      This exists so "a character levelling through Wailing Caverns finds it at
+#                      its real level" is guaranteed by this module rather than by a setting in a
+#                      conf file that isn't tracked in this repo. Two specific things it defends
+#                      against: AutoBalance.conf lives in the gitignored server checkout, so a
+#                      rebuilt box comes back with upstream defaults; and one of those defaults is
+#                      `LevelScaling.DynamicLevel.PerInstance = "229 -1 -1 1, 230 0 0"`, whose
+#                      `0 0` is a per-instance override that would force level scaling on in
+#                      Blackrock Depths for everyone the moment the global switch was armed.
+#
+#                      Turn this off only if you actually want AutoBalance's realm-wide level
+#                      scaling as well as challenge runs.
+#
+#        Default:     1 - normal dungeons are never level scaled
+#
+Nekocore.Challenge.SuppressLevelScalingOutsideChallenges = 1
+
+# Nekocore.Challenge.DynamicLevelCeiling
+# Nekocore.Challenge.DynamicLevelFloor
+#
+#        Description: How far above and below the bracket level a challenge dungeon's creatures
+#                      may sit, handed to AutoBalance's dynamic level scaling. At the defaults a
+#                      level-60 challenge puts the dungeon's own toughest creatures at 61 and its
+#                      weakest no lower than 55 -- so the dungeon's internal pecking order
+#                      survives (its trash still sits under its bosses), the whole thing just
+#                      moves up wholesale. Set Floor to 0 to flatten everything onto exactly the
+#                      bracket level instead.
+#
+#        Default:     1 / 5 - the same shape AutoBalance uses for dungeons
+#
+Nekocore.Challenge.DynamicLevelCeiling = 1
+Nekocore.Challenge.DynamicLevelFloor = 5
+
+# Nekocore.Challenge.Announce
+#
+#        Description: Whether the instance is told in chat when a challenge run starts, is cleared
+#                      or is wiped. The Keeper's own replies to the player who armed it are always
+#                      sent regardless.
+#
+#        Default:     1 - enabled
+#
+Nekocore.Challenge.Announce = 1

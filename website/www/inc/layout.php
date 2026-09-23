@@ -36,7 +36,7 @@ function neko_icon(string $name, string $class = 'ico'): string
 }
 
 /**
- * @param array $opts  title, active (home|news|leaderboard|drops|exchange|account),
+ * @param array $opts  title, active (home|news|leaderboard|logs|challenges|rankings|drops|exchange|account),
  *                     description, head (extra HTML for <head>), body_class
  */
 function neko_page_start(array $opts = []): void
@@ -56,6 +56,7 @@ function neko_page_start(array $opts = []): void
         'news'        => ['news.php', 'News'],
         'leaderboard' => ['lb.php', 'Leaderboard'],
         'logs'        => ['logs.php', 'Logs'],
+        'challenges'  => ['challenges.php', 'Challenges'],
         'rankings'    => ['rankings.php', 'Rankings'],
         'drops'       => ['dropsearch.php', 'Drops'],
         'exchange'    => ['exchange.php', 'Exchange'],

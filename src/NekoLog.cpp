@@ -99,6 +99,8 @@
 
 #include "IndividualProgression.h"
 
+#include "NekoLog.h"
+
 #include <mutex>
 #include <deque>
 #include <unordered_map>
@@ -849,6 +851,22 @@ public:
             CloseRun(key);
     }
 };
+
+// Asked for by the challenge-run system, which records which combat log
+// belongs to a challenge (nekocore_challenge_run.log_run_id). Nothing in this
+// file knows challenge runs exist, which is the point -- see NekoLog.h.
+namespace NekoLog
+{
+    uint64 RunIdFor(Map const* map)
+    {
+        if (!map)
+            return 0;
+
+        std::lock_guard<std::mutex> lock(runsMutex);
+        auto it = runs.find(RunKey(map));
+        return it == runs.end() ? 0 : it->second.id;
+    }
+}
 
 void AddSC_nekolog()
 {

@@ -1279,3 +1279,149 @@ deployed to the test client and zipped to
 `website/downloads/nekocore-patch.zip`. Not yet verified in-game: character
 creation with a new combo, a delve teleport, Chromie, the exchange NPC, the
 character-select news panel.
+
+## Challenge runs: old dungeons brought back to your level, harder every clear
+
+The gap: on a mod-individual-progression realm a character sits at their
+era's cap for a long time, and every dungeon under that cap is dead
+content. mod-autobalance can already scale a dungeon up to the party's
+level -- but `AutoBalance.LevelScaling` is one switch for the whole realm,
+and on this realm it was deliberately `0`, because a character levelling
+through Wailing Caverns at 20 has to find it at its real level. What was
+wanted was the opt-in version: tell an NPC "challenge run", go do Wailing
+Caverns at 60, and have it get harder every time you clear it.
+
+New in this repo: `src/ChallengeRun.cpp` (state, the Keeper NPC, clear/wipe
+detection), `src/ChallengeScaling.cpp` (the part that makes an instance
+harder), `data/sql/db-characters/base/nekocore_challenge.sql` (three
+tables), `data/sql/db-world/base/challenge_keeper.sql` (the NPC),
+`website/www/challenges.php` + `inc/challenges.php`, and a
+`Nekocore.Challenge.*` block in `conf/nekocore.conf.dist`.
+
+**How it plays.** The **Challenge Keeper** (entry 9000101) stands beside
+Dungeon Dan in Stormwind and Orgrimmar and lists the dungeons your
+character may challenge, each with the tier it is at *for you* and what
+that works out to. Picking one arms it; walking into the instance starts
+it. Killing the dungeon's final boss is +1 tier for everyone in the run;
+everyone being dead at once is -1 (`Nekocore.Challenge.WipePenalty`);
+leaving without either costs nothing. Tier N is `+15% health` and `+10%
+damage` per step by default -- health climbing faster than damage on
+purpose, so a tier is a longer fight before it is a lethal one. There is no
+ceiling unless you set one; the wall is wherever a group actually stops.
+
+Arming deliberately does **not** teleport. Dungeon Dan is three yards away
+and already has every dungeon entrance; a second copy of his coordinate
+table would be a second thing to keep right.
+
+**The bracket comes from the era, and it is the access gate.** 60 Vanilla /
+70 TBC / 80 WotLK, read the same way `EraTalentGate.cpp` and `NekoLog.cpp`
+read it (`GetPlayerProgressionFromQuests`, whose value is what
+mod-individual-progression's own `isBeforeProgression` /
+`hasPassedProgression` compare against). You have to be at that cap to arm
+or to enter one, and entering a flagged instance under-level bounces you to
+your hearth. That rule is free to enforce because the progression module
+already stops XP at each era's cap (`IndividualProgressionPlayer.cpp`'s
+`OnPlayerGiveXP`), so "at the cap" and "in that era" are the same
+characters.
+
+**Which dungeons: no hardcoded map list.** Built at startup from the
+client's own `LFGDungeon.dbc` (normal difficulty, type dungeon), kept only
+where `MapEntry::IsNonRaidDungeon()` and where `instance_encounters` has at
+least one row for the map. That second filter does double duty: it is how a
+clear gets detected, and it is a free way to drop the unused and
+development maps that sit in `Map.dbc` and `LFGDungeon.dbc` with nothing
+behind them. A map with several LFG rows (Blackrock Spire's two) is listed
+once. A dungeon's expansion has to be at or below your era, so a Vanilla
+character is never even offered a TBC dungeon.
+
+**Detecting a clear, data-driven.** Primary signal is
+`instance_encounters.lastEncounterDungeon` -- AzerothCore's own record of
+which encounter finishes a dungeon, the one that hands out LFG completion.
+Where a map has no row with it set, the fallback is "every encounter the
+instance script knows about is DONE", and that needs a second hook:
+`OnUnitDeath` runs *before* the instance script sets the last boss to DONE
+(`Unit::Kill` order), so `GlobalScript::OnBeforeSetBossState` is where that
+state change is actually visible. Startup logs how many dungeons are in
+that second group, so it is a number you can look at rather than a guess.
+
+### How it scales an instance without forking mod-autobalance
+
+Three levers, three different mechanisms, because AutoBalance exposes them
+in three different places -- all of this read out of its source, not
+assumed:
+
+- **Level.** Every level-scaling branch in AutoBalance sits behind the one
+  global `LevelScaling` (`ABAllCreatureScript.cpp`'s
+  `ModifyCreatureAttributes`, `ABUtils.cpp`'s `UpdateMapDataIfNeeded`), so
+  there is no way to scale one instance while it is off. What *is* per-map
+  is the skip range: both gates decide "don't scale" from
+  `mapABInfo->levelScalingSkipHigherLevels` / `...SkipLowerLevels`, runtime
+  fields on the map's own `AutoBalanceMapInfo`, where **0 means never
+  skip**. So `AutoBalance.LevelScaling` goes to 1 to arm the machinery, and
+  this module zeroes those fields on challenge instances only -- from
+  `ABModuleScript::OnBeforeModifyAttributes`, which AutoBalance calls per
+  creature four lines above the gate. Nothing can get between them, so no
+  config reload or map update can undo it mid-run.
+- **Health.** `ABModuleScript::OnBeforeUpdateStats`, whose `scaledHealth`
+  is the value AutoBalance is about to hand `SetMaxHealth`. Multiplying it
+  *there* means the tier bonus composes with AutoBalance's own party-size
+  and level scaling rather than replacing it, and it survives every
+  recalculation because it happens inside the recalculation.
+- **Damage.** Not that same hook: the `damageMultiplier` reference it hands
+  you is a dead end. By the time it is passed, AutoBalance has already
+  stored `creatureABInfo->DamageMultiplier` and computed the
+  `scaledDamageMultiplier` it will actually use, and it never reads the
+  parameter again. So damage rides the three `Modify*Damage*` UnitScript
+  hooks, the same way `WorldEliteScaling.cpp` does it.
+
+The other direction matters just as much: with
+`Nekocore.Challenge.SuppressLevelScalingOutsideChallenges` on (default),
+that same hook pushes the skip ranges *wide* on every non-challenge
+dungeon, so "normal dungeons are never level scaled" is a property of this
+module and not of a conf file. Two specific reasons that had to be true
+here -- `AutoBalance.conf` lives in the gitignored server checkout, so a
+rebuilt box comes back with upstream defaults; and one of those defaults is
+`LevelScaling.DynamicLevel.PerInstance = "229 -1 -1 1, 230 0 0"`, whose
+`0 0` is a per-instance skip override that would have forced level scaling
+on in Blackrock Depths for everyone the moment the global was armed.
+`AutoBalance.LevelScaling = 1` itself is now owned by
+`tools/server/stage_third_party.py settings` (idempotent, rewrites the live
+conf) so it survives a rebuild, and `ChallengeScaling.cpp` logs a startup
+ERROR if it ever comes back 0 rather than silently giving you "harder
+health, same level 18 mobs".
+
+Not scaled, on purpose: armor, CC duration, creature healing, and the
+"world" damage multiplier AutoBalance computes for damage whose source is
+not an enemy creature (traps, environment) -- that last one is worked out
+in `UpdateMapDataIfNeeded` before this module has any say, so a challenge
+instance's traps hit for their unscaled amount.
+
+### Recorded like a log, listed separately from one
+
+Challenge runs go through NekoLog's existing tables, which is what lets
+`log.php` render a challenge's full combat detail with no duplicated code
+-- and they are joined to it by `nekocore_challenge_run.log_run_id`. That
+link is deliberately in *that* direction: a column on `nekolog_run` would
+have needed an `ALTER` on a table that already exists live, and MySQL 8 has
+no `ADD COLUMN IF NOT EXISTS`, so the module's own idempotent base SQL
+could not express it. `NekoLog.h` exposes one function
+(`NekoLog::RunIdFor`); nothing in `NekoLog.cpp` knows challenge runs exist.
+
+Everything user-facing is separate, though: a new **Challenges** page with
+a ladder (highest tier actually *cleared*, which a wipe can never take
+away) and the run list, and every ordinary log/ranking query now excludes
+challenge runs via `nl_not_challenge()` -- a challenge kill in a boss's DPS
+ranking would be comparing two different games. A challenge's log page says
+so at the top, with the tier, the bonus it was fought at, and each
+participant's tier before and after.
+
+### One real bug found next door while doing this
+
+`WorldEliteScaling.cpp`'s `ScaleOutgoingAmount` had no map check, and it
+reads its multiplier out of `AutoBalanceCreatureInfo` -- mod-autobalance's
+*own* struct on the creature (same `CustomData` key on purpose). So inside
+a dungeon it was reading a multiplier AutoBalance had set for itself and
+already applied in its own `ABUnitScript`, and applying it a second time:
+every creature-to-player hit in every instance was being scaled by
+AutoBalance's factor **squared**. Fixed by the `IsWorldMap()` check that
+the enter-combat side of the same class always had.

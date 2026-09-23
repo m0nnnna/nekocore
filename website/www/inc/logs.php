@@ -86,10 +86,40 @@ function nl_difficulty(array $run): string
     return ((int)$run['spawn_mode'] === 1 ? 'Heroic ' : '') . '5-player';
 }
 
+/**
+ * SQL fragment excluding challenge runs from the ordinary log and ranking
+ * views. Challenge runs (src/ChallengeRun.cpp) are recorded by NekoLog through
+ * exactly the same tables -- that is deliberate, it is what lets log.php render
+ * a challenge's combat detail with no duplicated code -- but they are a
+ * different thing from a normal clear, at a different difficulty, and mixing
+ * them into "recent runs" or into a boss's DPS ranking would compare two games.
+ * They get their own page: challenges.php.
+ *
+ * Returns "1" (a no-op) if the challenge tables aren't present, so this file
+ * still works against a database that predates them.
+ */
+function nl_not_challenge(PDO $db, string $runIdColumn): string
+{
+    static $present = null;
+    if ($present === null) {
+        try {
+            $db->query("SELECT 1 FROM nekocore_challenge_run LIMIT 0");
+            $present = true;
+        } catch (PDOException $e) {
+            $present = false;
+        }
+    }
+    return $present
+        ? "NOT EXISTS (SELECT 1 FROM nekocore_challenge_run cr WHERE cr.log_run_id = $runIdColumn)"
+        : '1';
+}
+
 /** Recent runs, newest first. */
 function nl_recent_runs(PDO $db, ?int $mapId, int $limit, int $offset = 0): array
 {
-    $sql = "SELECT * FROM nekolog_run" . ($mapId ? " WHERE map_id = :map" : "") . " ORDER BY started_at DESC LIMIT :lim OFFSET :off";
+    $notChallenge = nl_not_challenge($db, 'nekolog_run.id');
+    $sql = "SELECT * FROM nekolog_run WHERE $notChallenge" . ($mapId ? " AND map_id = :map" : "")
+        . " ORDER BY started_at DESC LIMIT :lim OFFSET :off";
     $st = $db->prepare($sql);
     if ($mapId) $st->bindValue('map', $mapId, PDO::PARAM_INT);
     $st->bindValue('lim', $limit, PDO::PARAM_INT);
@@ -100,14 +130,18 @@ function nl_recent_runs(PDO $db, ?int $mapId, int $limit, int $offset = 0): arra
 
 function nl_maps(PDO $db): array
 {
-    return $db->query("SELECT map_id, map_name, COUNT(*) AS runs FROM nekolog_run GROUP BY map_id, map_name ORDER BY runs DESC")->fetchAll(PDO::FETCH_ASSOC);
+    $notChallenge = nl_not_challenge($db, 'nekolog_run.id');
+    return $db->query("SELECT map_id, map_name, COUNT(*) AS runs FROM nekolog_run WHERE $notChallenge
+                       GROUP BY map_id, map_name ORDER BY runs DESC")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /** Distinct bosses with pull counts, for the boss filter. */
 function nl_bosses(PDO $db): array
 {
+    $notChallenge = nl_not_challenge($db, 'r.id');
     return $db->query("SELECT e.boss_entry, e.boss_name, r.map_name, COUNT(*) AS pulls, SUM(e.result = 1) AS kills
                        FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
+                       WHERE $notChallenge
                        GROUP BY e.boss_entry, e.boss_name, r.map_name ORDER BY r.map_name, e.boss_name")->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -116,7 +150,8 @@ function nl_boss_pulls(PDO $db, int $bossEntry, int $limit, int $offset = 0): ar
 {
     $st = $db->prepare("SELECT e.*, r.map_name, r.started_at, r.is_raid, r.spawn_mode, r.max_players
                         FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
-                        WHERE e.boss_entry = :boss ORDER BY r.started_at DESC, e.start_ms DESC LIMIT :lim OFFSET :off");
+                        WHERE e.boss_entry = :boss AND " . nl_not_challenge($db, 'r.id') . "
+                        ORDER BY r.started_at DESC, e.start_ms DESC LIMIT :lim OFFSET :off");
     $st->bindValue('boss', $bossEntry, PDO::PARAM_INT);
     $st->bindValue('lim', $limit, PDO::PARAM_INT);
     $st->bindValue('off', $offset, PDO::PARAM_INT);
@@ -135,6 +170,7 @@ function nl_refresh_ranks(PDO $db, int $batch = 50): int
     $todo = $db->query("SELECT e.*, r.map_id, r.started_at FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
                         LEFT JOIN nekolog_rank k ON k.enc_id = e.id
                         WHERE e.result = 1 AND e.end_ms > e.start_ms AND k.enc_id IS NULL
+                          AND " . nl_not_challenge($db, 'r.id') . "
                         ORDER BY e.id LIMIT $batch")->fetchAll(PDO::FETCH_ASSOC);
     if (!$todo) return 0;
 
@@ -227,7 +263,8 @@ function nl_rank_maps(PDO $db): array
     return $db->query("SELECT r.map_id, r.map_name, r.is_raid, COUNT(DISTINCT e.boss_entry) AS bosses, COUNT(*) AS kills,
                               MAX(r.started_at + FLOOR(e.end_ms / 1000)) AS last_kill
                        FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
-                       WHERE e.result = 1 GROUP BY r.map_id, r.map_name, r.is_raid ORDER BY r.is_raid, r.map_name")->fetchAll(PDO::FETCH_ASSOC);
+                       WHERE e.result = 1 AND " . nl_not_challenge($db, 'r.id') . "
+                       GROUP BY r.map_id, r.map_name, r.is_raid ORDER BY r.is_raid, r.map_name")->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /** Bosses of one instance with a one-line best: fastest kill and top DPS. */
@@ -235,7 +272,8 @@ function nl_rank_bosses(PDO $db, int $mapId): array
 {
     $st = $db->prepare("SELECT e.boss_entry, e.boss_name, COUNT(*) AS pulls, SUM(e.result = 1) AS kills
                         FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
-                        WHERE r.map_id = :map GROUP BY e.boss_entry, e.boss_name ORDER BY MIN(e.id)");
+                        WHERE r.map_id = :map AND " . nl_not_challenge($db, 'r.id') . "
+                        GROUP BY e.boss_entry, e.boss_name ORDER BY MIN(e.id)");
     $st->execute(['map' => $mapId]);
     $bosses = $st->fetchAll(PDO::FETCH_ASSOC);
     $fast = $db->prepare("SELECT enc_id, run_id, duration_ms, players FROM nekolog_rank WHERE boss_entry = :b AND guid <> 0 AND eligible = 1 ORDER BY duration_ms ASC LIMIT 1");
