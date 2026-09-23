@@ -43,12 +43,42 @@
  * way this dynamic per-cast multiplier does, which is the whole reason
  * for building this instead.
  *
- * Fix: a SpellScript on OnEffectLaunchTarget -- runs just before
- * Spell::EffectPowerBurn processes each target -- that scales the
+ * Fix, part one: a SpellScript on OnEffectLaunchTarget -- runs just
+ * before Spell::EffectPowerBurn processes each target -- that scales the
  * effect's base value by the CASTER's own AutoBalance
- * ScaledDamageMultiplier before the core handler ever sees it, so both
- * the mana drained and the resulting damage end up consistently scaled
- * by the same factor mod-autobalance already computed for that creature.
+ * ScaledDamageMultiplier before the core handler ever sees it, so the
+ * mana drained is scaled by the same factor mod-autobalance already
+ * computed for that creature.
+ *
+ * Fix, part two (OnHit), because part one alone DOUBLE-scales the damage
+ * half. EffectPowerBurn derives its damage from however much mana was
+ * actually drained (`newDamage = -(ModifyPower(...)) * dmgMultiplier;
+ * m_damage += newDamage`), so scaling the effect value scales the damage
+ * with it -- and then Spell::DoAllEffectOnTarget's `m_damage > 0` block
+ * (Spell.cpp) hands that total to Unit::CalculateSpellDamageTaken, which
+ * fires ModifySpellDamageTaken unconditionally (Unit.cpp) and lets
+ * AutoBalance scale it a SECOND time. Result before this: mana drained
+ * x1, damage x2. It matters -- 68 of the 75 spells here have a non-zero
+ * EffectValueMultiplier on their POWER_BURN effect (0.5 to 30, checked
+ * against Spell.dbc), so most of them really do deal damage.
+ *
+ * So the OnHit handler divides the accumulated damage back out by the
+ * same multiplier, leaving the one application that the damage pipeline
+ * is about to do. OnHit is the right seam: CallScriptOnHitHandlers()
+ * runs before that `m_damage > 0` block in the same function, and
+ * SpellScript::SetHitDamage writes straight to m_spell->m_damage and is
+ * legal in that hook (IsInTargetHook covers SPELL_SCRIPT_HOOK_HIT).
+ *
+ * The invariant this rests on: whoever set ScaledDamageMultiplier on the
+ * creature also applies it to that creature's outgoing damage. True for
+ * both writers -- mod-autobalance in dungeons (ABUnitScript) and
+ * WorldEliteScaling.cpp in the open world -- and where neither has
+ * touched the creature the multiplier is 1.0f and both handlers no-op,
+ * so battlegrounds and AutoBalance-disabled maps fall out correctly.
+ * AutoBalance's one hardcoded spellIdsToNeverModify entry (1177, Twin
+ * Empathy) is not in this file's list, so that exemption can't desync
+ * the two halves either.
+ *
  * Reads mod-autobalance's own CustomData directly (its src/ dir is on the
  * shared `modules` target's include path -- confirmed against
  * modules/CMakeLists.txt's CollectIncludeDirectories/
@@ -73,6 +103,22 @@
 
 #include "ABCreatureInfo.h"
 
+namespace
+{
+    // Whatever has already scaled this creature: mod-autobalance inside a
+    // dungeon, or WorldEliteScaling.cpp out in the world. 1.0f when nothing
+    // has, which makes both handlers below a no-op. Defensive about <= 0 so
+    // the division in UndoDamageDoubleScaling can never blow up.
+    float ScaledDamageMultiplierOf(Unit* caster)
+    {
+        if (!caster)
+            return 1.0f;
+
+        float multiplier = caster->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo")->ScaledDamageMultiplier;
+        return multiplier > 0.0f ? multiplier : 1.0f;
+    }
+}
+
 // Three near-identical classes, one per effect slot, rather than one class
 // hooking all three: AzerothCore's spell-script loader validates every
 // registered hook against the actual spell's effect data at startup and
@@ -87,13 +133,18 @@
 #define NEKOCORE_MANA_BURN_SCALE_BODY \
     void ScaleEffectValue(SpellEffIndex /*effIndex*/) \
     { \
-        Unit* caster = GetCaster(); \
-        if (!caster) \
-            return; \
-        float multiplier = caster->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo")->ScaledDamageMultiplier; \
+        float multiplier = ScaledDamageMultiplierOf(GetCaster()); \
         if (multiplier == 1.0f) \
             return; \
         SetEffectValue(int32(GetEffectValue() * multiplier)); \
+    } \
+    \
+    void UndoDamageDoubleScaling() \
+    { \
+        float multiplier = ScaledDamageMultiplierOf(GetCaster()); \
+        if (multiplier == 1.0f) \
+            return; \
+        SetHitDamage(int32(float(GetHitDamage()) / multiplier)); \
     }
 
 class spell_nekocore_mana_burn_scaling_e0 : public SpellScript
@@ -104,6 +155,7 @@ class spell_nekocore_mana_burn_scaling_e0 : public SpellScript
     void Register() override
     {
         OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e0::ScaleEffectValue, EFFECT_0, SPELL_EFFECT_POWER_BURN);
+        OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e0::UndoDamageDoubleScaling);
     }
 };
 
@@ -115,6 +167,7 @@ class spell_nekocore_mana_burn_scaling_e1 : public SpellScript
     void Register() override
     {
         OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e1::ScaleEffectValue, EFFECT_1, SPELL_EFFECT_POWER_BURN);
+        OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e1::UndoDamageDoubleScaling);
     }
 };
 
@@ -126,6 +179,7 @@ class spell_nekocore_mana_burn_scaling_e2 : public SpellScript
     void Register() override
     {
         OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e2::ScaleEffectValue, EFFECT_2, SPELL_EFFECT_POWER_BURN);
+        OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e2::UndoDamageDoubleScaling);
     }
 };
 
