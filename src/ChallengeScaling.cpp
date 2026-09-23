@@ -32,17 +32,34 @@
  *    level-scaling gate at 547. Nothing can get between them, so the fields
  *    cannot be stale and no config reload or map update can undo it mid-run.
  *
- *    Belt and braces for the other direction: with
- *    Nekocore.Challenge.SuppressLevelScalingOutsideChallenges on (the default),
- *    the same hook pushes the skip fields WIDE on every non-challenge dungeon.
- *    That makes "normal dungeons are never level scaled" a property of this
- *    module rather than of a conf file in the gitignored server checkout, which
- *    matters here for two specific reasons: AutoBalance.conf is not tracked in
- *    this repo (so a rebuilt box gets upstream defaults back), and AutoBalance
- *    ships `LevelScaling.DynamicLevel.PerInstance = "229 -1 -1 1, 230 0 0"` by
- *    default -- that 0 0 pair is a per-instance skip override that would force
- *    level scaling on in Blackrock Depths for everybody the moment the global
- *    was armed.
+ *    Suppressing it everywhere else takes more than that hook, though, and
+ *    this is the part the first version of this file got wrong: arming the
+ *    global opens THREE copies of the same gate, and the hook can only stand
+ *    in front of one of them.
+ *
+ *      ABAllCreatureScript.cpp:551   sets creature LEVELS        <- the hook
+ *      ABUtils.cpp:779               getWorldMultiplier          <- not reachable
+ *      ABUtils.cpp:2869              mapLevel/isLevelScalingEnabled <- not reachable
+ *
+ *    The last two run inside UpdateMapDataIfNeeded right after LoadMapSettings
+ *    has reloaded the skip values from config, with no seam between them for a
+ *    script hook. Left alone, the getWorldMultiplier one would retarget the
+ *    "world" damage/healing multiplier -- damage whose source is not an enemy
+ *    creature, i.e. traps and environment -- at the player's level in EVERY
+ *    dungeon. That is the "all dungeons got scaled" outcome this module exists
+ *    to avoid, and it is invisible from the creature side.
+ *
+ *    So with Nekocore.Challenge.SuppressLevelScalingOutsideChallenges on (the
+ *    default) this module instead owns the values all three gates are fed
+ *    from: OnAfterConfigLoad forces AutoBalance's global skip range wide
+ *    enough that no level in the game can exceed it, so all three take their
+ *    "do not scale" branch exactly as they did while the global was off. The
+ *    per-creature hook narrowing that to 0 on a flagged instance is then the
+ *    one and only way level scaling ever happens. It also clears AutoBalance's
+ *    per-instance skip overrides, because the shipped default
+ *    `LevelScaling.DynamicLevel.PerInstance = "229 -1 -1 1, 230 0 0"` carries
+ *    a `0 0` that would force scaling on in Blackrock Depths for everybody
+ *    regardless of the global.
  *
  *    The level each creature lands on is AutoBalance's own dynamic calculation
  *    from `mapABInfo->highestPlayerLevel`, which this module pins to the run's
@@ -77,10 +94,14 @@
  * and the "world" damage multiplier AutoBalance uses for damage whose source
  * isn't an enemy creature (traps, environment). The first three are AutoBalance
  * struct fields that would each become another thing to keep in sync for a
- * second-order effect; the last one is computed in UpdateMapDataIfNeeded, which
- * runs before this module has any say and reads the config-loaded skip values,
- * so a challenge instance's traps hit for their unscaled amount. Health and
- * outgoing damage are the two levers the tiers were asked to move.
+ * second-order effect. The last one is a direct consequence of how the
+ * suppression above works: forcing the global skip range wide makes
+ * getWorldMultiplier target avgCreatureLevel on EVERY map, challenge instances
+ * included, so a challenge dungeon's traps keep hitting for their own level's
+ * amount. That is the right trade -- the alternative leaks scaling into every
+ * normal dungeon, and trap damage is a rounding error next to what the
+ * creatures do. Health and outgoing damage are the two levers the tiers were
+ * asked to move.
  */
 
 #include "ScriptMgr.h"
@@ -245,6 +266,58 @@ public:
                 "level -- they will only get the health and damage bonuses. Set AutoBalance.LevelScaling = 1 "
                 "in etc/modules/AutoBalance.conf (normal dungeons stay unscaled: see "
                 "Nekocore.Challenge.SuppressLevelScalingOutsideChallenges).");
+
+        if (!NekocoreChallenge::SuppressOutsideChallenges())
+            return;
+
+        // Arming AutoBalance's global opens THREE separate copies of the same
+        // level gate, not one, and OnBeforeModifyAttributes can only stand in
+        // front of the first:
+        //
+        //   ABAllCreatureScript.cpp:551  sets creature LEVELS      <- our hook
+        //   ABUtils.cpp:779              getWorldMultiplier        <- not ours
+        //   ABUtils.cpp:2869             mapLevel / isLevelScaling <- not ours
+        //
+        // The second and third run inside UpdateMapDataIfNeeded, immediately
+        // after LoadMapSettings has (re)loaded the skip values from config --
+        // there is no seam between them for a script hook, so a per-map fixup
+        // cannot reach them. Left alone, the second one would retarget the
+        // "world" damage/healing multiplier (damage whose source is not an enemy
+        // creature: traps, environment) at the player's level in EVERY dungeon,
+        // which is precisely the "all dungeons got scaled" outcome this module
+        // exists to avoid.
+        //
+        // So own the values the three gates are all fed from instead. A skip
+        // range this wide can never be exceeded by any level in the game, so
+        // all three gates take their "do not scale" branch, exactly as they did
+        // while the global was off -- and OnBeforeModifyAttributes narrowing it
+        // to 0 per creature on a flagged instance stays the one and only way
+        // level scaling ever happens.
+        LevelScalingSkipHigherLevels = int8(SKIP_EVERYTHING);
+        LevelScalingSkipLowerLevels  = int8(SKIP_EVERYTHING);
+
+        // AutoBalance's own LevelScaling.DynamicLevel.PerInstance default is
+        // "229 -1 -1 1, 230 0 0", and that `0 0` is a per-map skip override
+        // (applied in LoadMapSettings after the globals) that would force
+        // scaling on in Blackrock Depths for everyone regardless of the above.
+        // -1 is that parser's "leave the global alone" value. Ceiling/floor
+        // overrides are deliberately left intact: they only matter once scaling
+        // is enabled, which now only happens on challenge instances, where this
+        // module sets its own ceiling and floor anyway.
+        uint32 cleared = 0;
+        for (auto& entry : levelScalingDynamicLevelOverrides)
+        {
+            if (entry.second.skipHigher != -1 || entry.second.skipLower != -1)
+            {
+                entry.second.skipHigher = -1;
+                entry.second.skipLower  = -1;
+                ++cleared;
+            }
+        }
+
+        LOG_INFO("module.nekocore", "Challenge: level scaling suppressed outside challenge runs "
+            "(AutoBalance skip range forced to {}/{}, {} per-instance skip override(s) cleared)",
+            uint32(SKIP_EVERYTHING), uint32(SKIP_EVERYTHING), cleared);
     }
 };
 
