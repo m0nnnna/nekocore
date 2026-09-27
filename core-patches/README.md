@@ -10,3 +10,11 @@ can't be done from a module hook. Apply from the AzerothCore root with
   era tab and rejects tier >= 2 talents in Vanilla/stock tabs. (Fixed;
   the investigation write-up that used to live in docs/ was removed once
   the fix landed in commit f6339be.)
+- `0002-era-copies-of-id-checked-talents.patch` -- the core recognises a
+  few spells by hardcoded WotLK id, which the Vanilla/TBC copies
+  (`build_era_spells.py`, id + 300000 / + 400000) never match: Spirit of
+  Redemption (20711) in `Unit::Kill`, and Bestial Wrath (19574) / The Beast
+  Within (34692 -> 34471) in `Aura::HandleAuraSpecificMods`, plus Bestial
+  Wrath's crowd-control immunity in `SpellInfo`, `SpellInfoCorrections` and
+  `Spell::CheckCasterAuras`. A module hook cannot reach any of these: they
+  run inside the death path and the aura/immunity setup.

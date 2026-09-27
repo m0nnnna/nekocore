@@ -1,0 +1,91 @@
+diff --git a/src/server/game/Entities/Unit/Unit.cpp b/src/server/game/Entities/Unit/Unit.cpp
+index 5b73fdf37..9283443ff 100644
+--- a/src/server/game/Entities/Unit/Unit.cpp
++++ b/src/server/game/Entities/Unit/Unit.cpp
+@@ -13662,7 +13662,13 @@ void Unit::Kill(Unit* killer, Unit* victim, bool durabilityLoss, WeaponAttackTyp
+     bool spiritOfRedemption = false;
+     if (victim->IsPlayer() && victim->IsClass(CLASS_PRIEST, CLASS_CONTEXT_ABILITY) && !victim->ToPlayer()->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS))
+     {
+-        if (AuraEffect* aurEff = victim->GetAuraEffectDummy(20711))
++        // nekocore: also its Vanilla/TBC talent copies (build_era_spells.py, +300000/+400000)
++        AuraEffect* aurEff = victim->GetAuraEffectDummy(20711);
++        if (!aurEff)
++            aurEff = victim->GetAuraEffectDummy(320711);
++        if (!aurEff)
++            aurEff = victim->GetAuraEffectDummy(420711);
++        if (aurEff)
+         {
+             // Xinef: aura_spirit_of_redemption is triggered by 27827 shapeshift
+             if (victim->HasSpiritOfRedemptionAura() || victim->HasAura(27827))
+diff --git a/src/server/game/Spells/Auras/SpellAuras.cpp b/src/server/game/Spells/Auras/SpellAuras.cpp
+index 7e2455918..3f2609a4b 100644
+--- a/src/server/game/Spells/Auras/SpellAuras.cpp
++++ b/src/server/game/Spells/Auras/SpellAuras.cpp
+@@ -1931,16 +1931,19 @@ void Aura::HandleAuraSpecificMods(AuraApplication const* aurApp, Unit* caster, b
+             switch (GetId())
+             {
+                 case 19574: // Bestial Wrath
++                case 319574: // nekocore: Vanilla/TBC copies (build_era_spells.py, +300000/+400000)
++                case 419574:
+                     // The Beast Within cast on owner if talent present
+                     if (Unit* owner = target->GetOwner())
+                     {
+-                        // Search talent
+-                        if (owner->HasAura(34692))
++                        // Search talent -- WotLK's, or TBC's own copy, which casts TBC's rage
++                        uint32 rage = owner->HasAura(34692) ? 34471 : owner->HasAura(434692) ? 434471 : 0;
++                        if (rage)
+                         {
+                             if (apply)
+-                                owner->CastSpell(owner, 34471, true, 0, GetEffect(0));
++                                owner->CastSpell(owner, rage, true, 0, GetEffect(0));
+                             else
+-                                owner->RemoveAurasDueToSpell(34471);
++                                owner->RemoveAurasDueToSpell(rage);
+                         }
+                     }
+                     break;
+diff --git a/src/server/game/Spells/Spell.cpp b/src/server/game/Spells/Spell.cpp
+index f1a236f65..b216075fb 100644
+--- a/src/server/game/Spells/Spell.cpp
++++ b/src/server/game/Spells/Spell.cpp
+@@ -7126,7 +7126,8 @@ SpellCastResult Spell::CheckCasterAuras(bool preventionOnly) const
+         }
+         // immune movement impairment and loss of control
+         //         PVP trinket                   EMFH                   TOC PVP trinket               Bullheaded                  Bestial Wrath             // Beath Within         // Medalion of Immunity
+-        if (m_spellInfo->Id == 42292 || m_spellInfo->Id == 59752 || m_spellInfo->Id == 65547 || m_spellInfo->Id == 53490 || m_spellInfo->Id == 19574 || m_spellInfo->Id == 34471 || m_spellInfo->Id == 46227)
++        if (m_spellInfo->Id == 42292 || m_spellInfo->Id == 59752 || m_spellInfo->Id == 65547 || m_spellInfo->Id == 53490 || m_spellInfo->Id == 19574 || m_spellInfo->Id == 34471 || m_spellInfo->Id == 46227
++            || m_spellInfo->Id == 319574 || m_spellInfo->Id == 419574 || m_spellInfo->Id == 434471) // nekocore: era copies
+             mechanic_immune = IMMUNE_TO_MOVEMENT_IMPAIRMENT_AND_LOSS_CONTROL_MASK;
+     }
+ 
+diff --git a/src/server/game/Spells/SpellInfo.cpp b/src/server/game/Spells/SpellInfo.cpp
+index 8d30f81e4..08468a7a2 100644
+--- a/src/server/game/Spells/SpellInfo.cpp
++++ b/src/server/game/Spells/SpellInfo.cpp
+@@ -2447,6 +2447,9 @@ void SpellInfo::_LoadImmunityInfo()
+                 {
+                     case 34471: // The Beast Within
+                     case 19574: // Bestial Wrath
++                    case 319574: // nekocore: Vanilla/TBC Bestial Wrath, TBC The Beast Within (build_era_spells.py)
++                    case 419574:
++                    case 434471:
+                     case 42292: // PvP trinket
+                     case 46227: // Medallion of Immunity
+                     case 59752: // Every Man for Himself
+diff --git a/src/server/game/Spells/SpellInfoCorrections.cpp b/src/server/game/Spells/SpellInfoCorrections.cpp
+index d5e5fd025..1d170cb1c 100644
+--- a/src/server/game/Spells/SpellInfoCorrections.cpp
++++ b/src/server/game/Spells/SpellInfoCorrections.cpp
+@@ -5199,7 +5199,10 @@ void SpellMgr::LoadSpellInfoCorrections()
+         42292,  // PvP Trinket
+         59752,  // Every Man for Himself
+         19574,  // Bestial Wrath
+-        34471   // The Beast Within
++        34471,  // The Beast Within
++        319574, // nekocore: Vanilla/TBC Bestial Wrath, TBC The Beast Within (build_era_spells.py)
++        419574,
++        434471
+         }, [](SpellInfo* spellInfo)
+     {
+         spellInfo->AttributesEx2 |= SPELL_ATTR2_NO_SCHOOL_IMMUNITIES;
