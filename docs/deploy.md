@@ -47,8 +47,11 @@ sh tools/server/apply_realmlist.sh          # idempotent; run after any db-impor
 ```
 
 A fresh `ac-db-import` or a dump restore brings the dev row back, so this
-script is the last step of every deploy, not a one-off. `website/downloads/
-realmlist.wtf` says `set realmlist wow1.nekos.farm`; keep the two in sync.
+script is the last step of every deploy, not a one-off. The player side of
+the address is `REALM_ADDRESS` in `tools/install_patch/install_client.py`
+(baked into the patch zip's `Data/enUS/realmlist.wtf`) and `NEKO_REALM_ADDRESS`
+(the site's "Server address" box, default `wow1.nekos.farm`); keep all three
+in sync. `website/downloads/realmlist.wtf` still ships but nothing links it.
 
 ## Steps
 
@@ -60,13 +63,27 @@ realmlist.wtf` says `set realmlist wow1.nekos.farm`; keep the two in sync.
    `python tools/server/sync_module.py` (also stages the third-party
    `tp_*.sql`), then `tools/server/apply_module_sql.sh server`.
 4. **Realm row**: `sh tools/server/apply_realmlist.sh`.
-5. **Downloads**: `website/downloads/nekocore.zip` (client) present next to
-   `realmlist.wtf`; the site links to `/downloads/...`. Build the client
-   payload with `python tools/install_patch/install_client.py --wotlk-root
-   <master client copy> --bundle-zip website/downloads/nekocore-patch.zip`
-   *before* zipping the client -- that puts the merged `patch-Z.mpq` (era
-   talents + mod-uac + Prestige + Delves, ~350 MB) and the four addons in
-   place. See `docs/third-party-mods.md`.
+5. **Downloads**: the site offers **only the patch**, which also sets the
+   realmlist, and a "Server address" box for setting it by hand -- no full client -- players bring their own 3.3.5a enUS client. Its "Get the
+   patch" button serves `downloads/nekocore-patch.zip` (`NEKO_PATCH_URL`;
+   point it elsewhere if a real patcher replaces the zip). Build it with
+   `python tools/install_patch/install_client.py --wotlk-root <master client
+   copy> --bundle-zip website/downloads/nekocore-patch.zip` -- the merged
+   `patch-Z.mpq` (era talents + era spells + mod-uac + Prestige) and the
+   player addons. `DEV_ONLY_ADDONS` in `install_client.py` (NekoTalentDebug)
+   goes to the dev client and nowhere else. See `docs/third-party-mods.md`.
+
+   **Rebuild it whenever anything under `data/generated/` or
+   `client-patch/Interface/` changes** -- the client's DBCs must match the
+   ones the realm bind-mounts. Both drop builders (`build_deploy_drop.sh`,
+   `build_website_drop.sh`) refuse to run while the zip is missing or older
+   than either (`tools/server/check_patch_zip.sh`), and both copy it into the
+   drop; `update-from-mount.sh` / `update-website-from-mount.sh` put it on the
+   box and delete any leftover `downloads/nekocore.zip`. A patch-only change
+   needs just the website drop -- no realm restart.
+
+   `build_client_zip.py` (a full patched client) still works for handing
+   someone a client directly, but nothing publishes it.
 6. **Website**: `docker compose build neko-website && docker compose up -d`
    from `server/` (also starts auth/world again).
 7. **Expose the site** -- pick one:
@@ -100,7 +117,7 @@ same fix.
   192.168.1.8 via the /8 mask) -- talent frame opens (DBC bind mounts)
 - Site: realm status both green, staff login lands on the post list, post a
   news item, RSS validates, register a throwaway account and click the mail
-  link, `/downloads/nekocore.zip` and `/downloads/realmlist.wtf` serve
+  link, `/downloads/nekocore-patch.zip` serves and contains `Data/enUS/realmlist.wtf`
 - `SELECT address, localAddress FROM acore_auth.realmlist` still shows prod
 
 ## Rollback
@@ -266,6 +283,9 @@ images, DB dumps, runtime tree, `install-from-mount.sh` / `update-from-mount.sh`
 `neko-website` without stopping the realm; its dev-side pair is `build_website_drop.sh`).
 Its README covers running it on the box and carries a per-drop changelog.
 Rebuild it with `sh tools/server/build_deploy_drop.sh` (the box scripts are
-versioned in `tools/server/` and copied onto the share by it). `wow1.nekos.farm` is the realm's
+versioned in `tools/server/` and copied onto the share by it). It copies every
+`data/generated` DBC that `server/docker-compose.override.yml` mounts, read from
+the override itself (drop 4 and earlier hard-coded three and missed
+`SkillLineAbility.dbc`/`SpellRange.dbc`). `wow1.nekos.farm` is the realm's
 public name (resolves to the VPS); `wow.nekos.farm` is the website, routed
 through the VPS nginx to this stack's port 8088.

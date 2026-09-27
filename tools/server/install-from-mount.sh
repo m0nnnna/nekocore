@@ -97,7 +97,6 @@ cat <<EOF
 Next:
   - watch the worldserver come up:   docker logs -f ac-worldserver   (look for 'ready...')
   - website health:                   curl -s http://localhost:8088/healthz.php
-  - drop the client zip into $DEST_DIR/website/downloads/nekocore.zip (realmlist.wtf is already there)
   - point the VPS nginx (wow.nekos.farm) at this box:8088 and forward 3724/8085 here
   - install the backup crontab from $DEST_DIR/tools/server/backup_db.sh's header
 EOF

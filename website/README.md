@@ -72,7 +72,7 @@ Dockerfile               php:8.3-apache + gmp/pdo_mysql/mbstring, opcache on
 docker/apache/           vhost: deny /inc and /data, cache /downloads, trust X-Forwarded-Proto
 docker/private/          env-driven db_connect*.php + mail_config.php (no secrets)
 docker.env.example       copy to docker.env — SMTP creds and optional overrides
-downloads/               put nekocore.zip + realmlist.wtf here (served at /downloads/)
+downloads/               nekocore-patch.zip (patch + realmlist, served at /downloads/)
 www/healthz.php          container health check (PHP up + auth DB answering)
 ```
 

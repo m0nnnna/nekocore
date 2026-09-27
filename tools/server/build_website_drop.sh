@@ -17,6 +17,7 @@ DROP_DIR="${DROP_DIR:-/y/nekocore-deploy}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 
 [ -d "$DROP_DIR" ] || { echo "error: $DROP_DIR not found -- is the share mounted?" >&2; exit 1; }
+. "$REPO/tools/server/check_patch_zip.sh"
 
 if [ "$SKIP_BUILD" != "1" ]; then
     echo "==> building nekocore/website:latest"
@@ -32,7 +33,7 @@ echo "==> website tree -> $DROP_DIR/tree/website"
 mkdir -p "$DROP_DIR/tree/website/downloads"
 cp "$REPO/website/docker.env" "$REPO/website/docker.env.example" "$REPO/website/docker-compose.website.yml" "$DROP_DIR/tree/website/"
 cp "$REPO/website/downloads/realmlist.wtf" "$DROP_DIR/tree/website/downloads/"
-[ -f "$REPO/website/downloads/nekocore-patch.zip" ] && cp "$REPO/website/downloads/nekocore-patch.zip" "$DROP_DIR/tree/website/downloads/"
+cp "$PATCH_ZIP" "$DROP_DIR/tree/website/downloads/"
 cp "$REPO/tools/server/update-website-from-mount.sh" "$DROP_DIR/"
 
 echo "==> done: $(date '+%Y-%m-%d %H:%M')"

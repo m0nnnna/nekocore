@@ -30,8 +30,11 @@ $neko = [
     'registrations_open' => neko_env('NEKO_REGISTRATIONS_OPEN', '1') !== '0',
     'discord_url'        => neko_env('NEKO_DISCORD_URL', 'https://discord.gg/W9cMwT4Ar9'),
     'wiki_url'           => neko_env('NEKO_WIKI_URL', 'https://wiki.nekos.farm/en/WoW'),
-    'realmlist_file'     => neko_env('NEKO_REALMLIST_URL', 'realmlist.wtf'),
-    'client_zip'         => neko_env('NEKO_CLIENT_URL', 'nekocore.zip'),
+    // what realmlist.wtf points at -- the patch zip bakes in the same address
+    // (tools/install_patch/install_client.py REALM_ADDRESS)
+    'realm_address'      => neko_env('NEKO_REALM_ADDRESS', 'wow1.nekos.farm'),
+    // NekoCore patch (patch-Z.mpq + addons) players extract over their own 3.3.5a client
+    'patch_url'          => neko_env('NEKO_PATCH_URL', 'downloads/nekocore-patch.zip'),
 ];
 
 date_default_timezone_set(neko_env('NEKO_TZ', 'America/Chicago'));

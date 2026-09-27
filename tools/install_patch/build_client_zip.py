@@ -1,5 +1,7 @@
 """
-Packs a patched 3.3.5a client into the player-facing nekocore.zip: an
+Packs a patched 3.3.5a client into nekocore.zip -- no longer published (the
+site offers only the patch, see docs/deploy.md step 5), kept for handing
+someone a ready client directly. An
 explicit ALLOWLIST of what a player needs and nothing else -- no Cache/WTF/
 Logs, no third-party addons, no launcher leftovers, no editor backups.
 
@@ -38,6 +40,8 @@ import time
 import zipfile
 from pathlib import Path
 
+from install_client import LOCALE, REALM_ADDRESS, player_addon_dirs
+
 ROOT_FILES = ["Wow.exe", "AwesomeWotlkLib.dll", "DivxDecoder.dll", "msvcr80.dll"]
 
 DATA_MPQS = [
@@ -46,7 +50,6 @@ DATA_MPQS = [
     "patch-V.mpq", "patch-Z.mpq",
 ]
 
-LOCALE = "enUS"
 LOCALE_MPQS = [
     "backup-{L}.MPQ", "base-{L}.MPQ", "locale-{L}.MPQ", "speech-{L}.MPQ",
     "expansion-locale-{L}.MPQ", "expansion-speech-{L}.MPQ",
@@ -57,9 +60,9 @@ LOCALE_EXTRAS = ["AccountBilling.url", "TechSupport.url", "Credits.html", "Credi
                  "connection-help.html", "eula.html", "tos.html"]
 LOCALE_DIRS = ["Documentation", "Interface"]
 
-OUR_ADDONS = ["NekoTalentUI", "PrestigeSystem"]
+# same list the patch-only zip ships (install_client.py), so the two can't drift
+OUR_ADDONS = [p.name for p in player_addon_dirs()]
 
-REALMLIST = "set realmlist wow1.nekos.farm\n"
 
 ZIP_ROOT = "NekoCore"
 
@@ -81,7 +84,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--wotlk-root", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
-    ap.add_argument("--realm", default=REALMLIST.split()[-1], help="realmlist host (default wow1.nekos.farm)")
+    ap.add_argument("--realm", default=REALM_ADDRESS, help=f"realmlist host (default {REALM_ADDRESS})")
     args = ap.parse_args()
     root: Path = args.wotlk_root
     loc = root / "Data" / LOCALE

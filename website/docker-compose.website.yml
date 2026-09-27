@@ -30,10 +30,10 @@ services:
       NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:-password}
       NEKO_AUTH_HOST: ac-authserver
       NEKO_WORLD_HOST: ac-worldserver
-      NEKO_REALMLIST_URL: downloads/realmlist.wtf
-      NEKO_CLIENT_URL: downloads/nekocore.zip
+      NEKO_REALM_ADDRESS: wow1.nekos.farm
+      NEKO_PATCH_URL: downloads/nekocore-patch.zip
     volumes:
-      # Client zip + realmlist.wtf served at /downloads/. Put the files in
+      # Patch zip + realmlist.wtf served at /downloads/. Put the files in
       # website/downloads on the host (not committed -- see .gitignore).
       - ../website/downloads:/var/www/html/downloads:ro
     depends_on:

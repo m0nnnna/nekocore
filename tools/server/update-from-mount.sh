@@ -66,6 +66,8 @@ cp -a "$SOURCE_DIR/tree/data/." "$DEST_DIR/data/"
 cp -a "$SOURCE_DIR/tree/client-patch/." "$DEST_DIR/client-patch/"
 cp -a "$SOURCE_DIR/tree/tools/." "$DEST_DIR/tools/"
 cp -a "$SOURCE_DIR/tree/website/downloads/." "$DEST_DIR/website/downloads/"
+# The site no longer offers a full client, only the patch -- retire the old zip.
+rm -f "$DEST_DIR/website/downloads/nekocore.zip"
 cp "$SOURCE_DIR/tree/website/docker.env.example" "$DEST_DIR/website/" 2>/dev/null || true
 cp "$SOURCE_DIR/install-from-mount.sh" "$SOURCE_DIR/update-from-mount.sh" "$SOURCE_DIR/update-website-from-mount.sh" "$DEST_DIR/" 2>/dev/null || true
 if [ "$CLIENT_DATA" = "1" ]; then

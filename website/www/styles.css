@@ -456,6 +456,13 @@ code, pre { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; fon
 .dl { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .dl small { display: block; opacity: 0.8; margin-top: 4px; }
 
+.server-addr { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(11, 31, 40, 0.15); }
+.server-addr__title { margin: 0 0 8px; color: inherit; font-family: var(--font-display); font-size: 1rem; }
+.server-addr__row { display: flex; align-items: center; gap: 8px; }
+.server-addr__row code { flex: 1; min-width: 0; overflow-wrap: anywhere; padding: 8px 10px; font-size: 0.9rem; }
+.server-addr__copy { padding: 7px 12px; font-size: 0.9rem; flex: none; }
+.server-addr small { display: block; opacity: 0.8; margin-top: 8px; }
+
 .lb-mini { list-style: none; margin: 0; padding: 0; counter-reset: rank; }
 .lb-mini li {
     display: flex;
@@ -811,6 +818,9 @@ code, pre { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; fon
 .alert--success { background: rgba(143, 196, 138, 0.12); border-color: rgba(143, 196, 138, 0.4); color: #c4e6c0; }
 .alert--warn    { background: rgba(233, 179, 78, 0.12);  border-color: rgba(233, 179, 78, 0.4);  color: #f3d491; }
 .alert--info    { background: var(--ice-soft);           border-color: var(--line-strong);       color: var(--ice); }
+/* the dark-page amber is unreadable on the light ice panel */
+.panel--ice .alert--warn { background: #fbe7bf; border-color: var(--amber); color: #5a3d06; }
+.hero__warn { max-width: 34em; margin-bottom: 0; }
 
 /* ---------- tables -------------------------------------------------- */
 

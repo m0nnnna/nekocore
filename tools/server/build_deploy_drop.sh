@@ -26,6 +26,9 @@ SKIP_IMAGES="${SKIP_IMAGES:-0}"
 [ -d "$DROP_DIR" ] || { echo "error: $DROP_DIR not found -- is the share mounted?" >&2; exit 1; }
 [ -f "$REPO/server/.env" ] || { echo "error: $REPO/server/.env missing" >&2; exit 1; }
 
+# Checked up front, before the slow dumps and image saves.
+. "$REPO/tools/server/check_patch_zip.sh"
+
 DB_ROOT_PASSWORD=$(grep -E '^DOCKER_DB_ROOT_PASSWORD=' "$REPO/server/.env" | tail -1 | cut -d= -f2-)
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-password}"
 T="$DROP_DIR/tree"
@@ -70,8 +73,13 @@ fi
 # data/: generated DBCs the override bind-mounts + the module SQL
 rm -rf "$T/data/generated" "$T/data/sql"
 mkdir -p "$T/data/generated/dbc"
-cp "$REPO"/data/generated/Talent.dbc "$REPO"/data/generated/TalentTab.dbc "$REPO"/data/generated/Spell.dbc "$T/data/generated/"
-cp "$REPO"/data/generated/dbc/*.dbc "$T/data/generated/dbc/"
+# Every data/generated file the override mounts, read from the override itself:
+# a mounted file missing here makes docker create an empty directory in its
+# place on the box, and the worldserver can't load that DBC.
+for rel in $(grep -oE '"\.\./data/generated/[^:"]+' "$REPO/server/docker-compose.override.yml" | sed 's|^"\.\./data/generated/||' | sort -u); do
+    [ -f "$REPO/data/generated/$rel" ] || { echo "error: override mounts data/generated/$rel but it doesn't exist" >&2; exit 1; }
+    cp "$REPO/data/generated/$rel" "$T/data/generated/$rel"
+done
 cp -a "$REPO/data/sql" "$T/data/sql"
 
 # client-patch/: mod-individual-progression's optional DBCs (bind-mounted too)
@@ -81,10 +89,11 @@ cp -a "$REPO/client-patch/progression-optional" "$T/client-patch/progression-opt
 # tools/server: the ops scripts the box runs
 cp "$REPO"/tools/server/apply_realmlist.sh "$REPO"/tools/server/apply_module_sql.sh "$REPO"/tools/server/backup_db.sh "$T/tools/server/"
 
-# website/: env + downloads (client zip is copied by hand -- see README)
+# website/: env + downloads (the patch zip players get from the site; there is
+# no full client download any more)
 cp "$REPO/website/docker.env" "$REPO/website/docker.env.example" "$REPO/website/docker-compose.website.yml" "$T/website/"
 cp "$REPO/website/downloads/realmlist.wtf" "$T/website/downloads/"
-[ -f "$REPO/website/downloads/nekocore-patch.zip" ] && cp "$REPO/website/downloads/nekocore-patch.zip" "$T/website/downloads/"
+cp "$PATCH_ZIP" "$T/website/downloads/"
 
 # box scripts
 cp "$REPO"/tools/server/install-from-mount.sh "$REPO"/tools/server/update-from-mount.sh "$REPO"/tools/server/update-website-from-mount.sh "$DROP_DIR/" 2>/dev/null || true

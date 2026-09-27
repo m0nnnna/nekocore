@@ -6,7 +6,8 @@
 #
 # What it does:
 #   1. Copies website/downloads (client patch zip, realmlist.wtf) and
-#      docker.env.example from the mount. Does NOT touch website/docker.env
+#      docker.env.example from the mount, and deletes the retired full client
+#      zip (downloads/nekocore.zip) if it's still there. Does NOT touch website/docker.env
 #      (this box's own settings: SMTP login, Discord link, ...).
 #   2. `docker load`s images/website.tar only.
 #   3. Recreates just neko-website. ac-worldserver / ac-authserver /
@@ -26,6 +27,8 @@ DEST_DIR="${DEST_DIR:-/opt/nekocore}"
 echo "==> copying website files (docker.env untouched)"
 mkdir -p "$DEST_DIR/website/downloads"
 cp -a "$SOURCE_DIR/tree/website/downloads/." "$DEST_DIR/website/downloads/"
+# The site no longer offers a full client, only the patch -- retire the old zip.
+rm -f "$DEST_DIR/website/downloads/nekocore.zip"
 cp "$SOURCE_DIR/tree/website/docker.env.example" "$DEST_DIR/website/" 2>/dev/null || true
 cp "$SOURCE_DIR/update-website-from-mount.sh" "$DEST_DIR/" 2>/dev/null || true
 

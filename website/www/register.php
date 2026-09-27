@@ -151,8 +151,9 @@ neko_page_start(['title' => 'Create an account', 'active' => 'account']);
             <p>Want two-factor login? In game, type <span class="kbd">.account 2fa setup</span>, scan the code with your authenticator app, then confirm with <span class="kbd">.account 2fa setup &lt;code&gt;</span>. 2FA lives entirely in game.</p>
         </div>
         <div class="panel panel--ice">
-            <h3 class="panel__title"><?= neko_icon('download') ?> Then grab the client</h3>
-            <p>Once you're verified, <a href="<?= e($neko['client_zip']) ?>" download>download the client</a> or drop <a href="<?= e($neko['realmlist_file']) ?>" download>realmlist.wtf</a> into an existing 3.3.5a install.</p>
+            <h3 class="panel__title"><?= neko_icon('download') ?> Then grab the patch</h3>
+            <p>Once you're verified, set up your own 3.3.5a client:</p>
+            <?php neko_start_playing(); ?>
         </div>
     </aside>
 </div>

@@ -79,7 +79,7 @@ function neko_page_start(array $opts = []): void
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,400..800,0..100&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500&display=swap">
-    <link rel="stylesheet" href="<?= e($base) ?>styles.css?v=6">
+    <link rel="stylesheet" href="<?= e($base) ?>styles.css?v=7">
     <?= $opts['head'] ?? '' ?>
 </head>
 <body class="<?= e($body_class) ?>">
@@ -108,6 +108,40 @@ function neko_page_start(array $opts = []): void
 <?php
 }
 
+/** "You need the patch" warning -- on its own in the home hero, and above the buttons elsewhere. */
+function neko_patch_warning(string $class = ''): void
+{
+    ?>
+    <div class="alert alert--warn <?= e($class) ?>"><strong>You need the NekoCore patch to play.</strong> A plain 3.3.5a client will connect, but talents, spells and the extra race/class combos are broken without it.</div>
+    <?php
+}
+
+/** The patch button and server address shared by every page that tells a player how to start. */
+function neko_start_playing(bool $with_warning = true): void
+{
+    global $neko;
+    if ($with_warning) {
+        neko_patch_warning();
+    }
+    $line = 'set realmlist ' . $neko['realm_address'];
+    ?>
+    <ul class="dl">
+        <li>
+            <a class="btn btn--coral btn--block" href="<?= e($neko['patch_url']) ?>" download><?= neko_icon('download') ?> Get the patch</a>
+            <small>Extract into your 3.3.5a (enUS) WoW folder, replacing files when asked. It sets the server address too.</small>
+        </li>
+    </ul>
+    <div class="server-addr">
+        <h4 class="server-addr__title">Server address</h4>
+        <div class="server-addr__row">
+            <code><?= e($line) ?></code>
+            <button type="button" class="btn btn--ghost server-addr__copy" data-copy="<?= e($line) ?>">Copy</button>
+        </div>
+        <small>The patch already writes this to <code>Data/enUS/realmlist.wtf</code>. Still reaching another server? Delete any <code>SET realmList</code> line in <code>WTF/Config.wtf</code>.</small>
+    </div>
+    <?php
+}
+
 function neko_page_end(): void
 {
     global $neko;
@@ -134,6 +168,14 @@ function neko_page_end(): void
 </footer>
 
 <script>
+document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-copy]');
+    if (!btn || !navigator.clipboard) return;
+    navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+    });
+});
 (function () {
     var toggle = document.querySelector('.nav-toggle');
     var nav = document.getElementById('site-nav');

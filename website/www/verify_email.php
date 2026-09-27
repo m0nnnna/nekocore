@@ -62,20 +62,11 @@ neko_page_start(['title' => 'Verify email', 'active' => 'account']);
     <?php if ($success): ?>
         <div class="page-head">
             <h1>You're in!</h1>
-            <p>Your account is verified and ready. Grab the client and log in with the username and password you chose.</p>
+            <p>Your account is verified and ready. Grab the patch and log in with the username and password you chose.</p>
         </div>
         <div class="panel panel--ice">
             <h3 class="panel__title"><?= neko_icon('download') ?> Start playing</h3>
-            <ul class="dl">
-                <li>
-                    <a class="btn btn--coral btn--block" href="<?= e($neko['client_zip']) ?>" download>Download the client</a>
-                    <small>Full 3.3.5a client with the NekoCore patch. Extract anywhere and run.</small>
-                </li>
-                <li>
-                    <a class="btn btn--ghost btn--block" href="<?= e($neko['realmlist_file']) ?>" download>Get realmlist.wtf</a>
-                    <small>Already have a client? Drop this in <code>WoW/Data/enUS/</code>.</small>
-                </li>
-            </ul>
+            <?php neko_start_playing(); ?>
         </div>
         <p class="notice-line">New here? The <a href="<?= e($neko['wiki_url']) ?>">wiki</a> covers what's different on NekoCore, and <a href="<?= e($neko['discord_url']) ?>">Discord</a> is where everyone hangs out.</p>
     <?php else: ?>

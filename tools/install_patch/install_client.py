@@ -77,6 +77,12 @@ THIRD_PARTY = REPO_ROOT / "third-party"
 THIRD_PARTY_ADDONS = [
     THIRD_PARTY / "Prestige-and-Draft-Mode" / "Client Side Files" / "Client Addon" / "PrestigeSystem",
 ]
+# deployed to the dev client, never shipped to players (bundle zip, full client zip)
+DEV_ONLY_ADDONS = {"NekoTalentDebug"}
+# the realm both player zips point realmlist.wtf at (the site shows the same
+# address -- NEKO_REALM_ADDRESS)
+REALM_ADDRESS = "wow1.nekos.farm"
+LOCALE = "enUS"
 
 # mod-individual-progression's optional/ ships these server-only DBCs in
 # dbc.7z (unconditional) plus Spell.dbc in patch-V.7z/patch-S.7z (mutually
@@ -276,6 +282,12 @@ def addon_dirs() -> list[Path]:
     return ours + theirs
 
 
+def player_addon_dirs() -> list[Path]:
+    """What players get: every addon except the dev-only ones. The dev client
+    still gets those via deploy_addons()."""
+    return [p for p in addon_dirs() if p.name not in DEV_ONLY_ADDONS]
+
+
 def deploy_addons(wotlk_root: Path) -> None:
     dest_root = wotlk_root / "Interface" / "AddOns"
     for addon_dir in addon_dirs():
@@ -284,13 +296,15 @@ def deploy_addons(wotlk_root: Path) -> None:
         print(f"Deployed addon -> {dest}")
 
 
-def write_bundle_zip(out: Path, mpq_name: str) -> None:
-    """Everything a player drops over a stock client: Data/<mpq> + Interface/AddOns/*."""
+def write_bundle_zip(out: Path, mpq_name: str, realm: str) -> None:
+    """Everything a player drops over a stock client: Data/<mpq>, the realmlist
+    and Interface/AddOns/*, so extracting it is the whole setup."""
     import zipfile
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.write(STAGED_MPQ, f"Data/{mpq_name}")
-        for addon_dir in addon_dirs():
+        z.writestr(f"Data/{LOCALE}/realmlist.wtf", f"set realmlist {realm}\n")
+        for addon_dir in player_addon_dirs():
             for f in sorted(p for p in addon_dir.rglob("*") if p.is_file()):
                 z.write(f, f"Interface/AddOns/{addon_dir.name}/{f.relative_to(addon_dir).as_posix()}")
     print(f"Wrote {out} ({out.stat().st_size:,} bytes)")
@@ -313,6 +327,8 @@ def main() -> int:
                      help="mana-cost Spell.dbc variant: V = era-authentic lower costs, S = keep WotLK costs (default V)")
     ap.add_argument("--bundle-zip", type=Path,
                      help="also write a zip of the patch (Data/patch-Z.mpq + Interface/AddOns) for players to extract over a stock client")
+    ap.add_argument("--realm", default=REALM_ADDRESS,
+                     help=f"server address the bundle zip's realmlist.wtf points at (default {REALM_ADDRESS})")
     args = ap.parse_args()
 
     if not args.wotlk_root.is_dir():
@@ -342,7 +358,7 @@ def main() -> int:
     if args.bundle_zip:
         if args.addons_only and not STAGED_MPQ.exists():
             raise SystemExit("--bundle-zip needs a packaged MPQ; drop --addons-only")
-        write_bundle_zip(args.bundle_zip, "patch-Z.mpq")
+        write_bundle_zip(args.bundle_zip, "patch-Z.mpq", args.realm)
 
     if args.addons_only:
         print("\nDone. /reload is enough to pick up addon changes.")

@@ -45,12 +45,7 @@ neko_page_start(['active' => 'home', 'body_class' => 'page--home']);
             Raids tuned so you can clear them solo or with a couple of pals, custom content that keeps growing,
             and nobody yelling in trade chat.
         </p>
-        <div class="hero__actions">
-            <?php if ($neko['registrations_open']): ?>
-                <a class="btn btn--coral" href="register.php">Create an account</a>
-            <?php endif; ?>
-            <a class="btn btn--ghost" href="<?= e($neko['client_zip']) ?>" download><?= neko_icon('download') ?> Download the client</a>
-        </div>
+        <?php neko_patch_warning('hero__warn'); ?>
     </div>
     <div class="hero__art">
         <img src="images/logo3.png" alt="The NekoCore mascot, a grinning cat-eared girl with coral hair" width="380" height="380">
@@ -111,16 +106,7 @@ neko_page_start(['active' => 'home', 'body_class' => 'page--home']);
 
         <div class="panel panel--ice">
             <h3 class="panel__title"><?= neko_icon('download') ?> Start playing</h3>
-            <ul class="dl">
-                <li>
-                    <a class="btn btn--coral btn--block" href="<?= e($neko['client_zip']) ?>" download>Download the client</a>
-                    <small>Full 3.3.5a client with the NekoCore patch. Extract anywhere and run.</small>
-                </li>
-                <li>
-                    <a class="btn btn--ghost btn--block" href="<?= e($neko['realmlist_file']) ?>" download>Get realmlist.wtf</a>
-                    <small>Already have a client? Drop this in <code>WoW/Data/enUS/</code>.</small>
-                </li>
-            </ul>
+            <?php neko_start_playing(false); ?>
             <p class="panel__foot">Need an account? <a href="register.php">Create one</a> · <a href="<?= e($neko['wiki_url']) ?>">Read the wiki</a></p>
         </div>
 
