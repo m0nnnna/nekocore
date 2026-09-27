@@ -223,3 +223,51 @@ def write_archive(path: str | Path, files: dict[str, bytes], *, hash_table_slack
     assert len(out) == archive_size, (len(out), archive_size)
 
     Path(path).write_bytes(bytes(out))
+
+
+def read_archive_file(path: str | Path, internal_path: str) -> bytes | None:
+    """Reads one file back out of an archive written by write_archive().
+
+    Exists because nothing else in this project can: mpq_source.py's mpyq
+    refuses to even OPEN our archives, because write_archive deliberately
+    emits no (listfile) member and mpyq requires one. That silently turned
+    every one of our own deployed patches into "not found" for find_all()/
+    resolve() -- a blind spot that made it impossible to verify what we had
+    actually shipped to a client, as opposed to what we meant to.
+
+    Only handles what write_archive produces: MPQ v0, files stored
+    SINGLE_UNIT, uncompressed and unencrypted. Returns None if the archive
+    has no such path. Not a general MPQ reader -- for a stock Blizzard
+    archive, keep using mpq_source.py.
+    """
+    data = Path(path).read_bytes()
+    magic, header_size, _archive_size, _fmt, _sector_shift, hash_pos, block_pos, hash_size, block_count = \
+        struct.unpack_from("<4sIIHHIIII", data, 0)
+    if magic != MAGIC:
+        raise ValueError(f"{path}: not an MPQ archive (magic {magic!r})")
+
+    hash_words = _decrypt_words(
+        _bytes_to_words(data[hash_pos:hash_pos + hash_size * 16]),
+        mpq_hash(_HASH_TABLE_KEY, FILE_KEY))
+    block_words = _decrypt_words(
+        _bytes_to_words(data[block_pos:block_pos + block_count * 16]),
+        mpq_hash(_BLOCK_TABLE_KEY, FILE_KEY))
+
+    want_a = mpq_hash(internal_path, NAME_A)
+    want_b = mpq_hash(internal_path, NAME_B)
+    slot = mpq_hash(internal_path, TABLE_OFFSET) % hash_size
+    for _ in range(hash_size):  # linear probe, same as write_archive's placement
+        name_a, name_b, _locale_platform, block_index = hash_words[slot * 4:slot * 4 + 4]
+        if name_a == HASH_ENTRY_EMPTY:
+            return None
+        if (name_a, name_b) == (want_a, want_b):
+            offset, packed_size, size, flags = block_words[block_index * 4:block_index * 4 + 4]
+            if not flags & FLAG_EXISTS:
+                return None
+            if packed_size != size:
+                raise NotImplementedError(
+                    f"{path}: {internal_path} is compressed ({packed_size} -> {size}); "
+                    "this reader only handles what write_archive emits")
+            return data[offset:offset + size]
+        slot = (slot + 1) % hash_size
+    return None

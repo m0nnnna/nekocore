@@ -73,6 +73,7 @@ Pass both roots every time, same as you'd repeat every --class every time):
 from __future__ import annotations
 
 import argparse
+import json
 import csv
 import sys
 import tempfile
@@ -93,6 +94,9 @@ import mpq_source  # noqa: E402
 
 N_RANKS_COMPARED = 5
 RANK_FIELDS = [f"SpellRank_{i}" for i in range(N_RANKS_COMPARED)]
+
+SPELL_ATTR0_PASSIVE = 0x40
+SPELL_EFFECT_LEARN_SPELL = 36
 
 CLASSES = {
     "warrior": 1, "paladin": 2, "hunter": 3, "rogue": 4, "priest": 5,
@@ -150,10 +154,12 @@ def build_one_class(
     src_talents,
     src_tabs,
     wotlk_spell_ids: set[int],
+    active_talent_spells: set[int],
     wotlk_class_racemask: dict[str, int],
     tab_string_builder: StringBlockBuilder,
     locale_count: int,
     mapping: dict[int, int],
+    era_spells: dict[int, int] | None = None,
 ):
     """Builds one class's new tab/talent rows for one era. `mapping`
     (classic talent id -> new id) and `tab_string_builder` are shared/
@@ -214,7 +220,12 @@ def build_one_class(
         kept_ranks: dict[int, tuple[int, ...]] = {}  # classic id -> ranks actually emitted
         for row in tab_talents:
             rid = row["ID"]
-            row_ranks = [s for s in ranks_of(row) if s != 0]
+            # Each rank at this era's own copy of the spell when one exists
+            # (build_era_spells.py). Pointing at the shared id instead gave
+            # an era character WotLK's spell -- and where WotLK reused the id
+            # a different spell entirely: Vanilla Ice Block's talent taught
+            # Cold Snap, Death Wish taught Sweeping Strikes.
+            row_ranks = [(era_spells or {}).get(s, s) for s in ranks_of(row) if s != 0]
             # Longest leading run of ranks whose spells WotLK still has.
             present: list[int] = []
             for spell in row_ranks:
@@ -261,6 +272,14 @@ def build_one_class(
             ranks = kept_ranks[rid]
             for i in range(9):
                 new_row[f"SpellRank_{i}"] = ranks[i] if i < len(ranks) else 0
+            # addToSpellBook. Player::LearnTalent only puts an active talent
+            # spell into the spellbook when this is set; without it the spell
+            # is never learned. The client still shows it, but the server
+            # silently drops every cast (HandleCastSpellOpcode's
+            # HasActiveSpell check) and the caster hangs in the cast
+            # animation. Vanilla/TBC's own Talent.dbc leave it 0, so it is set
+            # the way WotLK sets it on its own active talents.
+            new_row["Flags"] = int(ranks[0] in active_talent_spells)
             depends_on = row["PrereqTalent_0"]
             if depends_on:
                 translated = mapping.get(depends_on)
@@ -297,6 +316,10 @@ def main() -> int:
     ap.add_argument("--spell-dbc", type=Path,
                     help="WotLK Spell.dbc to check rank spells against instead of the stock client's -- "
                          "pass port_era_spells.py's output so the talents it rescued are emitted")
+    ap.add_argument("--era-spell-map", type=Path,
+                    help="build_era_spells.py's era-spell-map.json: point each era's talent ranks at that era's "
+                         "own spell copies. Pass --spell-dbc build_era_spells.py's Spell.dbc with it, so the "
+                         "copies are found")
     ap.add_argument("--out-dbc-dir", required=True, type=Path)
     ap.add_argument("--out-mapping-dir", required=True, type=Path)
     args = ap.parse_args()
@@ -321,6 +344,17 @@ def main() -> int:
         }
 
     wotlk_spell_ids = {row["ID"] for row in wotlk_spell.rows}
+    # Player::LearnTalent's own test for "goes in the spellbook": not
+    # SPELL_ATTR0_PASSIVE and no SPELL_EFFECT_LEARN_SPELL.
+    active_talent_spells = {
+        row["ID"] for row in wotlk_spell.rows
+        if not row["Attributes"] & SPELL_ATTR0_PASSIVE
+        and SPELL_EFFECT_LEARN_SPELL not in (row["Effect_0"], row["Effect_1"], row["Effect_2"])
+    }
+    era_spell_maps: dict[str, dict[int, int]] = {}
+    if args.era_spell_map:
+        raw = json.loads(args.era_spell_map.read_text(encoding="utf-8"))["id_map"]
+        era_spell_maps = {label: {int(k): v for k, v in m.items()} for label, m in raw.items()}
     wotlk_class_racemask = {
         slug: next(t["RaceMask"] for t in wotlk_tabs.rows if t["ClassMask"] & CLASS_MASKS[slug])
         for slug in CLASSES
@@ -341,9 +375,11 @@ def main() -> int:
                 class_slug, era=era,
                 src_talents=src_talents, src_tabs=src_tabs,
                 wotlk_spell_ids=wotlk_spell_ids,
+                active_talent_spells=active_talent_spells,
                 wotlk_class_racemask=wotlk_class_racemask,
                 tab_string_builder=tab_string_builder, locale_count=wotlk_tabs.locale_count,
                 mapping=mapping,
+                era_spells=era_spell_maps.get(ERA_CONFIG[era]["label"]),
             )
             all_new_tab_rows += result["new_tab_rows"]
             all_new_talent_rows += result["new_talent_rows"]

@@ -93,7 +93,14 @@ PROGRESSION_DBC_FILES = [
 PROGRESSION_SPELL_ARCHIVE = {"V": "patch-V.7z", "S": "patch-S.7z"}
 
 
-GENERATED_SPELL = GENERATED_DIR / "Spell.dbc"  # port_era_spells.py output
+# port_era_spells.py's output: WotLK's Spell.dbc plus the era talent rank
+# spells it rescued. The BASE for build_era_spells.py, never deployed as-is.
+# It used to be written straight to GENERATED_SPELL, which meant every
+# --build silently replaced the deployed Spell.dbc with one that has no era
+# spells in it at all.
+PRE_ERA_SPELL = REPO_ROOT / "data" / "inputs" / "pre-era-spells-Spell.dbc"
+GENERATED_SPELL = GENERATED_DIR / "Spell.dbc"  # build_era_spells.py output: the deployed one
+ERA_SPELL_MAP = GENERATED_DIR / "era-spell-map.json"
 
 
 def port_spells(vanilla_root: Path | None, tbc_root: Path, wotlk_root: Path) -> None:
@@ -107,10 +114,30 @@ def port_spells(vanilla_root: Path | None, tbc_root: Path, wotlk_root: Path) -> 
         "--wotlk-root", str(wotlk_root),
         "--tbc-root", str(tbc_root),
         "--base-spell", str(PROGRESSION_STAGE_DIR / "Spell.dbc"),
-        "--out", str(GENERATED_SPELL),
+        "--out", str(PRE_ERA_SPELL),
     ]
     if vanilla_root:
         cmd += ["--vanilla-root", str(vanilla_root)]
+    print("+ " + " ".join(cmd))
+    PRE_ERA_SPELL.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(cmd, check=True)
+
+
+def build_era_spells(vanilla_root: Path | None, tbc_root: Path | None, wotlk_root: Path) -> None:
+    """Every era's own copy of every class spell (build_era_spells.py), on
+    top of port_spells()'s output. Must run BEFORE build_era_tree.py, whose
+    talent ranks point at these copies through era-spell-map.json."""
+    cmd = [
+        sys.executable,
+        str(REPO_ROOT / "tools" / "build_patch" / "build_era_spells.py"),
+        "--wotlk-root", str(wotlk_root),
+        "--base-spell", str(PRE_ERA_SPELL),
+        "--out-dir", str(GENERATED_DIR),
+    ]
+    if vanilla_root:
+        cmd += ["--vanilla-root", str(vanilla_root)]
+    if tbc_root:
+        cmd += ["--tbc-root", str(tbc_root)]
     print("+ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
 
@@ -125,6 +152,8 @@ def build_dbcs(vanilla_root: Path | None, tbc_root: Path | None, wotlk_root: Pat
     ]
     if GENERATED_SPELL.exists():
         cmd += ["--spell-dbc", str(GENERATED_SPELL)]
+    if ERA_SPELL_MAP.exists():
+        cmd += ["--era-spell-map", str(ERA_SPELL_MAP)]
     else:
         print("note: no ported Spell.dbc (needs --tbc-root) -- talents whose spells WotLK deleted stay out")
     if vanilla_root:
@@ -189,6 +218,30 @@ def package_mpq() -> None:
         files["DBFilesClient\\Spell.dbc"] = (PROGRESSION_STAGE_DIR / "Spell.dbc").read_bytes()
         print("Including progression Spell.dbc in the client MPQ "
               "(server-only DBCs -- SkillLine etc. -- don't need a client copy)")
+    # SkillLineAbility: previously server-only (the client never validates
+    # skill data against its own copy the way it does talents). Era spells
+    # change that -- the client reads SkillLineAbility to decide which
+    # spellbook tab a known spell belongs in, so without a client copy every
+    # era clone a character knows would sit outside its class's tabs.
+    # build_era_spells.py's output, which is progression's own copy plus one
+    # row per clone; same file the realm bind-mounts.
+    generated_sla = GENERATED_DIR / "SkillLineAbility.dbc"
+    if generated_sla.exists():
+        files["DBFilesClient\\SkillLineAbility.dbc"] = generated_sla.read_bytes()
+        print(f"Including era-extended SkillLineAbility.dbc ({generated_sla}) in the client MPQ")
+
+    # Spell index side tables, emitted by build_era_spells.py ONLY when an
+    # era value had no equivalent row in WotLK's own table (e.g. a cast time
+    # or range Vanilla had and WotLK does not). An era spell's
+    # CastingTimeIndex/RangeIndex points into these, so a client without
+    # them would render that spell with the wrong range or cast time --
+    # they ship together or not at all. Same files the realm bind-mounts.
+    for name in ["SpellCastTimes.dbc", "SpellDuration.dbc", "SpellRadius.dbc", "SpellRange.dbc"]:
+        side = GENERATED_DIR / name
+        if side.exists():
+            files[f"DBFilesClient\\{name}"] = side.read_bytes()
+            print(f"Including era-extended {name} in the client MPQ")
+
     mod_dbcs = sorted(MOD_DBC_DIR.glob("*.dbc")) if MOD_DBC_DIR.is_dir() else []
     for dbc in mod_dbcs:
         key = f"DBFilesClient\\{dbc.name}"
@@ -276,7 +329,12 @@ def main() -> int:
         if args.build:
             if args.tbc_root:
                 port_spells(args.vanilla_root, args.tbc_root, args.wotlk_root)
+            build_era_spells(args.vanilla_root, args.tbc_root, args.wotlk_root)
             build_dbcs(args.vanilla_root, args.tbc_root, args.wotlk_root, classes)
+            print("\nNOTE: era spell ids may have changed. Regenerate and apply the world SQL:\n"
+                  "  python tools/build_patch/build_era_spell_sql.py "
+                  "--out data/sql/db-world/base/zzz_nekocore_era_spells.sql\n"
+                  "  (then sync_module.py + apply_module_sql.sh, see docs/deploy.md)")
         package_mpq()
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 

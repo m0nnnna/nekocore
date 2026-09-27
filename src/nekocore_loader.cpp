@@ -8,6 +8,10 @@
 void AddSC_era_talent_gate();
 void AddSC_era_talent_info_remap();
 void AddSC_era_progression_sync();
+void AddSC_era_spell_gate();
+void AddSC_era_spell_sync();
+void AddSC_era_talent_migration();
+void AddSC_era_spell_scripts();
 void AddSC_nekocore_mana_burn_scaling();
 void AddSC_raid_lock();
 void AddSC_world_elite_scaling();
@@ -20,6 +24,10 @@ void AddnekocoreScripts()
     AddSC_era_talent_gate();
     AddSC_era_talent_info_remap();
     AddSC_era_progression_sync();
+    AddSC_era_spell_gate();
+    AddSC_era_spell_sync();
+    AddSC_era_talent_migration();
+    AddSC_era_spell_scripts();
     AddSC_nekocore_mana_burn_scaling();
     AddSC_raid_lock();
     AddSC_world_elite_scaling();

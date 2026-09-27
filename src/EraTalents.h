@@ -51,7 +51,7 @@ namespace NekoEraTalents
     // by then, so read the same rewarded-quest state directly (66000 +
     // ProgressionState, exactly what that module's own
     // GetPlayerProgressionFromQuests scans).
-    inline Era EraOfPlayer(Player* player)
+    inline Era EraOfPlayer(Player const* player)
     {
         constexpr uint32 PROGRESSION_QUEST_BASE = 66000;
         auto reached = [&](ProgressionState state)

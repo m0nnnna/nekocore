@@ -7,6 +7,17 @@ mpyq can pull a file out of an MPQ by exact internal path without needing
 the archive's (listfile) -- MPQ's hash table is keyed by name hash, so a
 known path like "DBFilesClient\\Talent.dbc" resolves directly.
 
+IMPORTANT, and the reason this module only ever reads STOCK client archives:
+mpyq cannot open the archives this project writes at all. It requires a
+(listfile) member, which tools/mpq/mpq_writer.py deliberately does not emit
+-- so every patch we deploy (patch-Z.mpq and friends) is silently skipped by
+find_all() below, and resolve() answers with the stock file underneath it.
+That is a blind spot in verification, not in the deployment: the retail
+client reads those archives fine. To read one of OUR archives back, use
+mpq_writer.read_archive_file(). Related: _priority() does not rank the
+single-letter patch archives the client loads last and this project ships
+into, so its answer would be wrong for them even if mpyq could see them.
+
 A given DBC filename may exist in more than one MPQ in a client install
 (base archive + one or more patch archives overriding it). We don't hard-code
 a single "correct" patch-priority order here -- for verification purposes we

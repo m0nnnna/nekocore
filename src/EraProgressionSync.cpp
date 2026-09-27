@@ -1,10 +1,19 @@
 /*
- * Auto-resets a character's talents the moment mod-individual-progression
- * carries them across an era boundary this repo cares about (Vanilla ->
- * TBC, TBC -> WotLK) -- otherwise a character would keep whatever points
+ * Moves a character onto their new era's talents AND spells the moment
+ * mod-individual-progression carries them across an era boundary this repo
+ * cares about (Vanilla -> TBC, TBC -> WotLK).
+ *
+ * Talents are RESET -- otherwise a character would keep whatever points
  * they'd sunk into the era they just left (which EraTalentGate.cpp now
  * locks them out of re-spending, but doesn't retroactively refund), and
  * have no points free to spend in the era they just unlocked.
+ *
+ * Spells are REMAPPED rather than reset, because unlike talents they can
+ * be: an era copy is its WotLK spell's id plus a fixed offset, so the same
+ * ability in the new era is one subtraction and one addition away (see
+ * MigrateSpellsForEraChange). Without this the character would keep spells
+ * EraSpellGate no longer lets them cast, still sitting in action bars that
+ * had quietly stopped working.
  *
  * No 1:1 remapping of old points onto the new era's tree is attempted --
  * that's not generally even possible (different trees, different talent
@@ -35,9 +44,25 @@
 
 #include "IndividualProgression.h"
 
+#include "EraSpells.h"
+
+
 namespace
 {
     constexpr uint32 PROGRESSION_QUEST_BASE = 66000;
+
+    // Spell migration is the same operation login already performs, so it
+    // is shared with EraSpellSync.cpp rather than written twice.
+    void MigrateSpellsForEraChange(Player* player, NekoEraSpells::Era newEra, char const* newEraLabel)
+    {
+        uint32 const changed = NekoEraSpells::ReconcileSpellsToEra(player, newEra);
+        if (!changed)
+            return;
+
+        ChatHandler(player->GetSession()).PSendSysMessage(
+            "|cff00ff00[Era Spells]|r %u of your abilities have been updated to their %s versions.",
+            changed, newEraLabel);
+    }
 
     void ResetTalentsForEraChange(Player* player, char const* newEraLabel)
     {
@@ -61,9 +86,15 @@ public:
 
         uint32 questId = quest->GetQuestId();
         if (questId == PROGRESSION_QUEST_BASE + PROGRESSION_PRE_TBC)
+        {
             ResetTalentsForEraChange(player, "TBC");
+            MigrateSpellsForEraChange(player, NekoEraSpells::ERA_TBC, "TBC");
+        }
         else if (questId == PROGRESSION_QUEST_BASE + PROGRESSION_TBC_TIER_5)
+        {
             ResetTalentsForEraChange(player, "WotLK");
+            MigrateSpellsForEraChange(player, NekoEraSpells::ERA_WOTLK, "WotLK");
+        }
     }
 };
 
