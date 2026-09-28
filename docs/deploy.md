@@ -37,7 +37,12 @@ LAN  ──> 192.168.1.8  = this box seen through the VPN (MySQL 3306 reachable;
 | | name | address | localAddress | mask |
 |---|---|---|---|---|
 | dev | AzerothCore | 192.168.0.10 | 127.0.0.1 | 255.255.255.0 |
-| **prod** | NekoCore | wow1.nekos.farm | 192.168.1.8 | 255.0.0.0 |
+| **prod** | NekoCore | 108.174.48.199 | 192.168.1.8 | 255.0.0.0 |
+
+The prod address is the VPS proxy's **IP**, not `wow1.nekos.farm`: the authserver
+resolves `address` itself, on the box, and hands clients the resulting IP -- a name
+the box resolves to an internal address would send outside players somewhere they
+can't reach. (Players' own `realmlist.wtf` keeps the hostname; their DNS is public.)
 
 The prod row is `data/sql/db-auth/base/nekocore_realmlist.sql` (identical to
 `Documents\scripts\wow\nekocore connection.sql`). Apply it with
