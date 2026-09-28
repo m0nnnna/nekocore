@@ -56,6 +56,7 @@
 #include "Player.h"
 #include "Creature.h"
 #include "DBCStores.h"
+#include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Trainer.h"
 #include "NPCPackets.h"
@@ -63,6 +64,7 @@
 #include "EraSpells.h"
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
 namespace
@@ -90,6 +92,30 @@ namespace
         return playerEra != ERA_WOTLK && !IsTalentRankSpell(spellId)
             && EraSpellFor(playerEra, spellId) != 0;
     }
+
+    /// What a trainer "teaching" spell grants through its LEARN_SPELL
+    /// effects (10321 "Judgement" -> 20271, 21084; 34768 Summon Warhorse ->
+    /// 34769, 33388). Empty for an ordinary spell.
+    std::vector<uint32> TaughtSpells(uint32 spellId)
+    {
+        std::vector<uint32> taught;
+        if (SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId))
+            for (SpellEffectInfo const& effect : info->GetEffects())
+                if (effect.IsEffect(SPELL_EFFECT_LEARN_SPELL) && effect.TriggerSpell)
+                    taught.push_back(effect.TriggerSpell);
+        return taught;
+    }
+
+    /// A taught spell counts as held when the character has it or, for a
+    /// spell their era has its own version of, that version -- learning the
+    /// WotLK id is swapped for the era copy, so the WotLK id never arrives.
+    bool HoldsTaughtSpell(Player const* player, Era playerEra, uint32 taught)
+    {
+        if (player->HasSpell(taught))
+            return true;
+        uint32 const eraCopy = EraSpellFor(playerEra, taught);
+        return eraCopy && player->HasSpell(eraCopy);
+    }
 }
 
 class EraSpellGate : public PlayerScript
@@ -98,7 +124,34 @@ public:
     EraSpellGate() : PlayerScript("EraSpellGate", {
         PLAYERHOOK_CAN_LEARN_SPELL,
         PLAYERHOOK_ON_BEFORE_RECEIVE_SPELL_LIST_FROM_TRAINER,
+        PLAYERHOOK_ON_GET_TRAINER_SPELL_STATE,
     }) { }
+
+    /// Teaching spells. Trainer::GetDefaultSpellState calls one known only
+    /// when the player holds every WotLK id it teaches, which an era
+    /// character never will (see HoldsTaughtSpell). So 10321 "Judgement"
+    /// stayed Available after purchase, and because TeachSpell takes the
+    /// money and plays the visual before the learn is swapped away, every
+    /// click charged for nothing. Counting the era copies fixes the colour
+    /// and, since CanTeachSpell asks this same state, blocks the purchase.
+    void OnPlayerGetTrainerSpellState(Player const* player, uint32 /*trainerId*/, uint32 spellId,
+                                      Trainer::SpellState& state) override
+    {
+        if (!player || state != Trainer::SpellState::Available || EraOfSpell(spellId) != ERA_WOTLK)
+            return;
+
+        Era const playerEra = NekoEraTalents::EraOfPlayer(player);
+        if (playerEra == ERA_WOTLK)
+            return;
+
+        std::vector<uint32> const taught = TaughtSpells(spellId);
+        if (taught.empty())
+            return;
+        for (uint32 spell : taught)
+            if (!HoldsTaughtSpell(player, playerEra, spell))
+                return;
+        state = Trainer::SpellState::Known;
+    }
 
     bool OnPlayerCanLearnSpell(Player* player, uint32 spellId) override
     {
@@ -140,11 +193,16 @@ public:
             return;
 
         Era const playerEra = NekoEraTalents::EraOfPlayer(player);
+        std::unordered_set<uint32> listed;
+        for (WorldPackets::NPC::TrainerListSpell const& entry : trainerList.Spells)
+            listed.insert(static_cast<uint32>(entry.SpellID));
+
         std::vector<WorldPackets::NPC::TrainerListSpell> kept;
         kept.reserve(trainerList.Spells.size());
         for (WorldPackets::NPC::TrainerListSpell const& entry : trainerList.Spells)
         {
-            if (HiddenFromEra(player, playerEra, static_cast<uint32>(entry.SpellID)))
+            uint32 const spellId = static_cast<uint32>(entry.SpellID);
+            if (HiddenFromEra(player, playerEra, spellId) || DuplicatedByEraCopies(player, playerEra, spellId, listed))
                 continue;
             kept.push_back(entry);
             ShowRequiredSpells(kept.back());
@@ -154,6 +212,34 @@ public:
     }
 
 private:
+    /// A teaching spell whose era-copied lessons this same list already
+    /// sells, or the character already holds, adds nothing but a second
+    /// row: 10321 "Judgement" next to 320271 Judgement. One with a lesson
+    /// only it can deliver stays -- 34768 Summon Warhorse is the only way a
+    /// TBC paladin gets 434769, which no trainer lists on its own.
+    static bool DuplicatedByEraCopies(Player const* player, Era playerEra, uint32 spellId,
+                                      std::unordered_set<uint32> const& listed)
+    {
+        if (playerEra == ERA_WOTLK || EraOfSpell(spellId) != ERA_WOTLK)
+            return false;
+
+        bool anyCopied = false;
+        for (uint32 taught : TaughtSpells(spellId))
+        {
+            uint32 const eraCopy = EraSpellFor(playerEra, taught);
+            if (!eraCopy)
+            {
+                if (!player->HasSpell(taught))
+                    return false; // something only this row teaches
+                continue;
+            }
+            anyCopied = true;
+            if (!listed.count(eraCopy) && !player->HasSpell(eraCopy))
+                return false;
+        }
+        return anyCopied;
+    }
+
     /// Puts the spells the server requires but the list does not name into
     /// the entry's ReqAbility slots, which is the only way the client learns
     /// of them: the previous rank in the chain (Frenzied Regeneration r2
