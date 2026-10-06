@@ -1425,3 +1425,52 @@ already applied in its own `ABUnitScript`, and applying it a second time:
 every creature-to-player hit in every instance was being scaled by
 AutoBalance's factor **squared**. Fixed by the `IsWorldMap()` check that
 the enter-combat side of the same class always had.
+
+## Player bug reports, 2026-10-04 (Vanilla paladin, soft launch)
+
+A batch from the first soft-launch players, nearly all one Vanilla paladin.
+Most traced back to the era spell copies keeping some WotLK detail the core
+keys on:
+
+- **Holy Light / Flash of Light healed nothing.** Their 1.12 rows heal
+  through SCRIPT_EFFECT, which the 1.12 core turned into the heal by hand.
+  `build_clone` now takes WotLK's plain HEAL in that slot.
+- **Seal of Righteousness.** Rank 1 ran WotLK's 3.0 script and ranks 2-8 had
+  none, so nothing hit. `spell_era_pal_seal_of_righteousness` is the 1.12
+  formula (vmangos). The two Vanilla "Rank 1" spells also split the rank
+  chain in two; `resolve_rank_claim` orders them by the era's own
+  SkillLineAbility link.
+- **Seal of the Crusader** was ported with its 1.12 family bits, which are
+  not a WotLK seal's, so the core never treated it as a seal: no
+  replacing other seals, no Judgement aura state. Ported seals now get a
+  WotLK seal bit (`as_wotlk_seal`), and the era's damage cut that offsets
+  its attack speed is back (`EraSpellFixups.cpp`).
+- **Judgement of the Crusader** r1 (21183) is a different spell in WotLK,
+  and seals name their judgement only as a number, so it was never copied.
+  `era_side_spells` now copies every judgement a seal names. Vanilla
+  Judgement of Command (a dummy naming its damage) is cast by hand.
+- **Tooltips** now use the era's own name and text (Blessing, not Hand, of
+  Protection; no Avenging Wrath), with `$12345s1` tokens pointed at the era
+  copies (`remap_era_text_refs`).
+- **Forbearance**: Vanilla bubbles apply the era's 1-minute copy
+  (`spell_era_pal_immunities`); Vanilla Lay on Hands runs no WotLK script.
+  Bandages lose WotLK's pacify prevention, so bubble-bandaging works again.
+- **Duplicate auras on the stance bar**: the core finds paladin auras by the
+  WotLK raid-aura effect; Vanilla's are party auras, so ranks never
+  replaced each other. Fixed for era copies at startup.
+- **Weapon proficiency**: an era copy of One-Handed Swords taught no skill,
+  because era SkillLineAbility rows must be AcquireMethod 0. The skill is
+  now learned from the WotLK row on learn and at login.
+- **Spell coefficients**: Vanilla copies get 1.12-rule coefficients and no
+  attack power scaling instead of WotLK's `spell_bonus_data`
+  (`vanilla_coefficients`), plus core patch 0004 for 1.12's level penalty.
+- **Hogger, and every solo world elite: no loot.** World elite scaling cut
+  max health without lowering the core's "players must deal half its
+  health" requirement. `WorldEliteScaling.cpp` now resets it.
+- **Class quests repeated at other races' givers**: mod-uac opens every
+  race's paladin chain to the faction. `zzz_nekocore_class_quest_exclusivity.sql`
+  makes the Human, Dwarf and Draenei chains exclusive.
+
+Not changed: Light Leather and Copper Ore stacking to 10 is
+mod-individual-progression's 1.12 stack size (`zz_optional_item_stack_sizes.sql`),
+and the Blood Elf creation error is the documented TBC race lock.

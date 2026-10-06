@@ -93,7 +93,7 @@ cp "$REPO"/tools/server/apply_realmlist.sh "$REPO"/tools/server/apply_module_sql
 # no full client download any more)
 cp "$REPO/website/docker.env" "$REPO/website/docker.env.example" "$REPO/website/docker-compose.website.yml" "$T/website/"
 cp "$REPO/website/downloads/realmlist.wtf" "$T/website/downloads/"
-cp "$PATCH_ZIP" "$T/website/downloads/"
+cp "$PATCH_ZIP" "$PATCH_MANIFEST" "$T/website/downloads/"
 
 # box scripts
 cp "$REPO"/tools/server/install-from-mount.sh "$REPO"/tools/server/update-from-mount.sh "$REPO"/tools/server/update-website-from-mount.sh "$DROP_DIR/" 2>/dev/null || true

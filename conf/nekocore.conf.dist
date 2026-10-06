@@ -258,3 +258,16 @@ Nekocore.Challenge.DynamicLevelFloor = 5
 #        Default:     1 - enabled
 #
 Nekocore.Challenge.Announce = 1
+
+# Nekocore.PatchVersionFile
+#
+#        Description: File holding the client patch version players must have, written by
+#                      tools/install_patch/install_client.py (data/generated/patch-version.txt,
+#                      bind-mounted here by docker-compose.override.yml). The NekoPatchCheck addon
+#                      reports the client's version at login; a mismatch gets an "update your
+#                      patch" popup, no report at all gets a chat line. Missing or empty file turns
+#                      the check off. Re-read on `.reload config`. See src/PatchCheck.cpp.
+#
+#        Default:     "/azerothcore/nekocore/patch-version.txt"
+#
+Nekocore.PatchVersionFile = "/azerothcore/nekocore/patch-version.txt"

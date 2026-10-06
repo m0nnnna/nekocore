@@ -186,7 +186,26 @@ ERA_SCRIPTS = {
     ("TBC", 5487): "spell_era_dru_furor",
     ("TBC", 9634): "spell_era_dru_furor",
     ("TBC", -18213): "spell_era_warl_improved_drain_soul",
+    # Seal of Righteousness: a melee-hit dummy the 1.12 core turned into
+    # damage by weapon speed. WotLK's spell_pal_seal_of_righteousness uses
+    # the 3.0 formula, and was only ever on rank 1 -- ranks 2-8, ported from
+    # the era, did nothing at all on hit.
+    ("Vanilla", 20154): "spell_era_pal_seal_of_righteousness",
+    ("Vanilla", 21084): "spell_era_pal_seal_of_righteousness",
+    **{("Vanilla", s): "spell_era_pal_seal_of_righteousness"
+       for s in (20287, 20288, 20289, 20290, 20291, 20292, 20293)},
+    # Divine Shield, Divine Protection, Blessing of Protection: the era's
+    # 1-minute Forbearance and no Avenging Wrath marker, in place of WotLK's
+    # spell_pal_immunities.
+    **{("Vanilla", s): "spell_era_pal_immunities" for s in (642, 1020, 498, 5573, 1022, 5599, 10278)},
 }
+
+# Era copies that must run NONE of the WotLK spell's scripts, and need no
+# handler of their own: the era spell is complete as data. Keyed by era and
+# ORIGINAL spell id. Vanilla Lay on Hands neither gave nor checked
+# Forbearance, and had no Avenging Wrath to check; WotLK's
+# spell_pal_lay_on_hands does both.
+ERA_NO_WOTLK_SCRIPTS = {("Vanilla", 633), ("Vanilla", 2800), ("Vanilla", 10310)}
 
 # ERA_SCRIPTS handlers that run NEXT TO the clone's stock scripts instead of
 # replacing them: Furor rides on the druid forms, which keep WotLK's own
@@ -513,6 +532,11 @@ def main() -> int:
     # own id (11958), so on TBC Cold Snap it would reset its own cooldown.
     replaced_by_era_script = {maps.get(era, {}).get(abs(base)) for (era, base), script in ERA_SCRIPTS.items()
                               if script not in ERA_SCRIPTS_ALONGSIDE}
+    replaced_by_era_script |= {maps.get(era, {}).get(base) for era, base in ERA_NO_WOTLK_SCRIPTS}
+    # Spell power coefficients build_era_spells.py derived under the era's
+    # own rule. An era that has them gets these INSTEAD of WotLK's rows.
+    era_bonus: dict[str, dict[int, list[float]]] = {
+        era: {int(k): v for k, v in rows.items()} for era, rows in spell_map.get("bonus", {}).items()}
     dropped: dict[str, int] = {}
 
     lines = [
@@ -564,6 +588,9 @@ def main() -> int:
                 clone = mapping.get(base_key)
                 if clone is None:
                     continue  # this spell has no clone in this era
+                if table == "spell_bonus_data" and era in era_bonus:
+                    dropped[table] = dropped.get(table, 0) + 1
+                    continue
                 if table in PROC_TABLES:
                     flags_col = "ProcFlags" if table == "spell_proc" else "procFlags"
                     row_flags = int(row[cols.index(flags_col)]) if flags_col in cols else 0
@@ -591,6 +618,12 @@ def main() -> int:
                 values.append("(" + ", ".join(sql_literal(v) for v in out_row) + ")")
                 emitted += 1
 
+        if table == "spell_bonus_data":
+            for era, rows_for_era in era_bonus.items():
+                for clone, (direct, dot, ap_dot) in sorted(rows_for_era.items()):
+                    values.append(f"({clone}, {direct}, {dot}, 0, {ap_dot}, "
+                                  f"{sql_literal(era + ' coefficient (build_era_spells.py)')})")
+                    emitted += 1
         if values:
             col_list = ", ".join("`" + c + "`" for c in cols)
             for chunk_start in range(0, len(values), 500):

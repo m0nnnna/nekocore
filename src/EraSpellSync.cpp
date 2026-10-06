@@ -92,6 +92,15 @@ namespace NekoEraSpells
                 // tracks a learned talent through sTalentSpellPosMap.
                 if (IsTalentRankSpell(spellId))
                     continue;
+                // Gathering perks the era never had. They have no copy to
+                // move to, so drop them; the core re-adds them at login on
+                // the !IsInWorld skill-load path, which is why this has to
+                // run every login rather than once.
+                if (IsWotlkOnlyProfessionPerk(spellId))
+                {
+                    moves[spellId] = 0;
+                    continue;
+                }
                 if (uint32 eraCopy = EraSpellFor(targetEra, spellId))
                     moves[spellId] = eraCopy;
                 continue;

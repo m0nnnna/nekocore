@@ -1,0 +1,50 @@
+From 96a382440f603f5fb6d8965c432994f795446007 Mon Sep 17 00:00:00 2001
+From: m0nnnna <mona@frennet.xyz>
+Date: Sun, 4 Oct 2026 00:56:50 -0400
+Subject: [PATCH] nekocore: era copies roll pushback resistance as a chance,
+ like 1.12/2.4
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/server/game/Spells/Spell.cpp | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/server/game/Spells/Spell.cpp b/src/server/game/Spells/Spell.cpp
+index b216075fb..dc6e9179f 100644
+--- a/src/server/game/Spells/Spell.cpp
++++ b/src/server/game/Spells/Spell.cpp
+@@ -8108,6 +8108,15 @@ void Spell::Delayed() // only called in DealDamage()
+     if (delayReduce >= 100)
+         return;
+ 
++    // nekocore: Vanilla/TBC copies (build_era_spells.py, +300000/+400000) use their era's rule --
++    // the summed value is a chance to lose no time at all, not a reduction of the delay
++    if (m_spellInfo->Id >= 300000 && m_spellInfo->Id < 500000)
++    {
++        if (roll_chance_i(delayReduce))
++            return;
++        delayReduce = 0;
++    }
++
+     AddPct(delaytime, -delayReduce);
+ 
+     if (m_timer + delaytime > m_casttime)
+@@ -8150,6 +8159,15 @@ void Spell::DelayedChannel()
+     if (delayReduce >= 100)
+         return;
+ 
++    // nekocore: Vanilla/TBC copies (build_era_spells.py, +300000/+400000) use their era's rule --
++    // the summed value is a chance to lose no time at all, not a reduction of the delay
++    if (m_spellInfo->Id >= 300000 && m_spellInfo->Id < 500000)
++    {
++        if (roll_chance_i(delayReduce))
++            return;
++        delayReduce = 0;
++    }
++
+     AddPct(delaytime, -delayReduce);
+ 
+     if (m_timer <= delaytime)
+-- 
+2.55.0.windows.2
+

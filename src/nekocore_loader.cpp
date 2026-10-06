@@ -12,12 +12,14 @@ void AddSC_era_spell_gate();
 void AddSC_era_spell_sync();
 void AddSC_era_talent_migration();
 void AddSC_era_spell_scripts();
+void AddSC_era_spell_fixups();
 void AddSC_nekocore_mana_burn_scaling();
 void AddSC_raid_lock();
 void AddSC_world_elite_scaling();
 void AddSC_nekolog();
 void AddSC_nekocore_challenge_run();
 void AddSC_nekocore_challenge_scaling();
+void AddSC_nekocore_patch_check();
 
 void AddnekocoreScripts()
 {
@@ -28,10 +30,12 @@ void AddnekocoreScripts()
     AddSC_era_spell_sync();
     AddSC_era_talent_migration();
     AddSC_era_spell_scripts();
+    AddSC_era_spell_fixups();
     AddSC_nekocore_mana_burn_scaling();
     AddSC_raid_lock();
     AddSC_world_elite_scaling();
     AddSC_nekolog();
     AddSC_nekocore_challenge_run();
     AddSC_nekocore_challenge_scaling();
+    AddSC_nekocore_patch_check();
 }

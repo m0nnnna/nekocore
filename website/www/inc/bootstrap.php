@@ -35,6 +35,10 @@ $neko = [
     'realm_address'      => neko_env('NEKO_REALM_ADDRESS', 'wow1.nekos.farm'),
     // NekoCore patch (patch-Z.mpq + addons) players extract over their own 3.3.5a client
     'patch_url'          => neko_env('NEKO_PATCH_URL', 'downloads/nekocore-patch.zip'),
+    // NekoCore Launcher (m0nnnna/wotlk-client-tools): installs and updates
+    // the patch above, sets the realm, starts the game
+    'launcher_url'       => neko_env('NEKO_LAUNCHER_URL',
+        'https://github.com/m0nnnna/wotlk-client-tools/releases/latest/download/NekoCoreLauncher.exe'),
 ];
 
 date_default_timezone_set(neko_env('NEKO_TZ', 'America/Chicago'));

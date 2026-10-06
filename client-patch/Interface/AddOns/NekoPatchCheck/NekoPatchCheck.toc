@@ -1,0 +1,5 @@
+## Interface: 30300
+## Title: NekoPatchCheck
+## Notes: Tells the realm which NekoCore patch this client has, and says so when it is out of date.
+Version.lua
+NekoPatchCheck.lua

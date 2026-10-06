@@ -66,10 +66,9 @@ appends a new row to the WotLK table when nothing matches -- which is why
 it can also emit patched SpellCastTimes/SpellDuration/SpellRange/
 SpellRadius DBCs alongside Spell.dbc.
 
-What is deliberately NOT taken from the era row: name/description strings
-(WotLK's read correctly because their $s1-style tokens resolve against the
-clone's own, now era-correct, effect values), spell visuals and icons, and
-the spell family fields. --tag-names appends an era marker to the clone's
+What is deliberately NOT taken from the era row: spell visuals and icons,
+and the spell family fields. Name and tooltip ARE the era's (see
+build_clone), with tokens naming other spells pointed at their era copies. --tag-names appends an era marker to the clone's
 name; that is a TESTING aid, not for a real build.
 
 Usage:
@@ -139,15 +138,11 @@ KEEP_FROM_WOTLK = {
     # Presentation: era icons/visuals are ids into that build's own
     # SpellVisual/SpellIcon tables and would point at the wrong art here.
     "SpellVisualID_0", "SpellVisualID_1", "SpellIconID", "ActiveIconID",
-    # Strings: WotLK's own string-block offsets, already valid in the file
-    # being written. The tooltip numbers come from the row's effect values,
-    # which ARE era-overridden, so the displayed text stays truthful.
-    # Every string field is listed here so the generic copy loop never
-    # touches one: an era row's loc_string holds offsets into ITS build's
-    # string block, and Vanilla has 8 locale slots where WotLK has 16, so
-    # copying the dict across produces a row that cannot even be packed.
-    # build_clone re-interns NameSubtext_lang from the era row afterwards,
-    # which is the one string that genuinely should be the era's.
+    # Strings. Every string field is listed here so the generic copy loop
+    # never touches one: an era row's loc_string holds offsets into ITS
+    # build's string block, and Vanilla has 8 locale slots where WotLK has
+    # 16, so copying the dict across produces a row that cannot even be
+    # packed. build_clone re-interns the era's own text afterwards.
     "Name_lang", "NameSubtext_lang", "Description_lang", "AuraDescription_lang",
     # Spell family. Talent spellmods ("Improved X by Y%") and a good deal
     # of core logic match spells by family + mask, so a clone has to keep
@@ -198,6 +193,25 @@ REUSED_SAME_LAYOUT = {31656, 31657, 31658, 31876, 31877, 31878, 15337, 15338, 20
 
 def effect_layout(row: dict) -> tuple:
     return tuple((row[f"Effect_{i}"], row[f"EffectAura_{i}"]) for i in range(3))
+
+
+SPELL_EFFECT_DUMMY = 3
+SPELL_EFFECT_HEAL = 10
+SPELL_EFFECT_SCRIPT_EFFECT = 77
+
+# `$12345s1`, `$/87;20187s3`, `${$20335m1*2}`: a tooltip token naming another
+# spell by id. Group 1 is everything before the id, so only the id changes.
+SPELL_REF_TOKEN = re.compile(r"(\$(?:[/*][\d.]+;)?)(\d+)(?=[a-zA-Z])")
+
+
+def remap_era_text_refs(text: str, era_ids: dict[int, int]) -> str:
+    """Points tooltip tokens that name another spell at that spell's copy in
+    the same era. Vanilla Seal of Righteousness r2 reads "$/87;20280s3": 20280
+    is a spell WotLK deleted, so the client printed the token raw, and Seal of
+    the Crusader's "$21183s1" read WotLK's Heart of the Crusader (1) instead
+    of the era's Judgement of the Crusader. A spell with no era copy keeps
+    its id, which is then the shared spell the era uses too."""
+    return SPELL_REF_TOKEN.sub(lambda m: m.group(1) + str(era_ids.get(int(m.group(2)), int(m.group(2)))), text)
 
 
 def is_reused_id(spell_id: int, era_row: dict, wotlk_row: dict) -> bool:
@@ -593,6 +607,22 @@ def untrainable_ported(ported: dict[str, dict], era_by_id: dict[int, dict],
 RANK_TEXT = re.compile(r"^Rank (\d+)$")
 
 
+def resolve_rank_claim(claims: set[int], links: set[tuple[int, int]]) -> int:
+    """Which of the spells labelled with one rank is the chain's member, or 0.
+
+    Two spells claiming one rank are usually a buff and its proc half, and
+    then neither is kept rather than guessing. The exception is a pair the
+    era's own SkillLineAbility already orders: Vanilla Seal of Righteousness
+    has two "Rank 1" spells, 20154 -> 21084, and leaving both out cut 21084
+    off from Rank 2 -- two unrelated chains, so Rank 2 never replaced Rank 1.
+    The spell the link leads TO is the one the chain carries on from.
+    """
+    if len(claims) == 1:
+        return next(iter(claims))
+    last = [c for c in claims if not any((c, other) in links for other in claims)]
+    return last[0] if len(last) == 1 and any((o, last[0]) in links for o in claims) else 0
+
+
 def rank_links_touching_ported(era_map: dict[str, int], ported: set[int], era_by_id: dict[int, dict],
                                sla_by_spell: dict[int, list[dict]]) -> list[list[int]]:
     """The era's own rank links (lower rank -> next) for every link that
@@ -618,7 +648,7 @@ def rank_links_touching_ported(era_map: dict[str, int], ported: set[int], era_by
             if nxt and spell_id in in_era and nxt in in_era:
                 links.add((spell_id, nxt))
 
-    by_name: dict[tuple[str, int], dict[int, int]] = {}
+    by_name: dict[tuple[str, int], dict[int, set[int]]] = {}
     for spell_id in in_era:
         row = era_by_id.get(spell_id)
         match = RANK_TEXT.match(row["NameSubtext_lang"]["enUS"].strip()) if row else None
@@ -626,13 +656,12 @@ def rank_links_touching_ported(era_map: dict[str, int], ported: set[int], era_by
             continue
         for sla_row in sla_by_spell.get(spell_id, []):
             ranks = by_name.setdefault((row["Name_lang"]["enUS"].strip(), sla_row["SkillLine"]), {})
-            # Two spells claiming one rank (a buff and its proc half) make
-            # the chain ambiguous; keep neither rather than guess.
-            ranks[int(match.group(1))] = -1 if int(match.group(1)) in ranks else spell_id
+            ranks.setdefault(int(match.group(1)), set()).add(spell_id)
     for ranks in by_name.values():
-        for n in sorted(ranks):
-            a, b = ranks[n], ranks.get(n + 1)
-            if b and a > 0 and b > 0:
+        resolved = {n: resolve_rank_claim(claims, links) for n, claims in ranks.items()}
+        for n in sorted(resolved):
+            a, b = resolved[n], resolved.get(n + 1)
+            if a and b:
                 links.add((a, b))
 
     return sorted([a, b] for a, b in links if a in ported or b in ported)
@@ -726,6 +755,234 @@ def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
     return False
 
 
+SPELLFAMILY_PALADIN = 10
+SPELL_AURA_DUMMY = 4
+FORBEARANCE = 25771
+
+
+def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
+    """Spells an era needs its own copy of although no class learns them.
+
+      * The judgement each seal names. A seal names it only as a number, its
+        EFFECT_2 dummy amount (spell_era_pal_judgement reads it), so the
+        transitive port never saw it. Vanilla Judgement of the Crusader r1,
+        21183, is Heart of the Crusader in WotLK: judging Seal of the
+        Crusader cast the WotLK talent debuff. Vanilla Judgement of Command
+        is itself a dummy naming its damage spell, so that is followed too.
+      * Forbearance, which lasts 1 minute in both eras and 2 in WotLK. The
+        era immunity handler applies the era's copy.
+    """
+    out: set[int] = set()
+
+    def named(row: dict, i: int) -> int:
+        return row[f"EffectBasePoints_{i}"] + 1
+
+    for spell_id in wanted:
+        row = era_by_id[spell_id]
+        if (row["SpellClassSet"] != SPELLFAMILY_PALADIN or not row["Name_lang"]["enUS"].startswith("Seal of")
+                or row["Effect_2"] != SPELL_EFFECT_APPLY_AURA or row["EffectAura_2"] != SPELL_AURA_DUMMY):
+            continue
+        judgement = era_by_id.get(named(row, 2))
+        if judgement is None:
+            continue
+        out.add(judgement["ID"])
+        if judgement["Effect_0"] == SPELL_EFFECT_DUMMY and named(judgement, 0) in era_by_id:
+            out.add(named(judgement, 0))
+    if FORBEARANCE in era_by_id:
+        out.add(FORBEARANCE)
+    return out
+
+
+# Every seal carries one of these WotLK family bits, and AzerothCore finds
+# seals by them (SpellInfo::GetSpellSpecific): that is what makes seals
+# replace each other and what sets the aura state Judgement requires.
+WOTLK_SEAL_FLAGS = (0x0A000000, 0x26000C00, 0)
+# Seal of Blood / the Martyr's bit: TBC/WotLK-only seals no era character
+# holds, and nothing in the core reads it for anything but seal-ness.
+ERA_SEAL_FLAG_1 = 0x00000400
+
+
+def as_wotlk_seal(row: dict) -> bool:
+    """Gives a ported era seal a WotLK seal family bit. Returns whether the
+    row changed.
+
+    A seal WotLK deleted keeps its era family bits, and Seal of the
+    Crusader's (0x200) are not a WotLK seal's. So the core did not treat it
+    as a seal at all: it stacked with every other seal instead of replacing
+    it, and never set the aura state Judgement needs -- Judgement could not
+    be cast with only Crusader up, and when Righteousness was added after
+    it, Crusader was judged instead.
+    """
+    # The seal itself names its judgement in an EFFECT_2 dummy; same-named
+    # rows without one are its proc halves (Seal of Light's heal, 20333).
+    if (row["SpellClassSet"] != SPELLFAMILY_PALADIN or not row["Name_lang"]["enUS"].startswith("Seal of")
+            or row["Effect_2"] != SPELL_EFFECT_APPLY_AURA or row["EffectAura_2"] != SPELL_AURA_DUMMY):
+        return False
+    if any(row[f"SpellClassMask_{i}"] & WOTLK_SEAL_FLAGS[i] for i in range(3)):
+        return False
+    row["SpellClassMask_1"] |= ERA_SEAL_FLAG_1
+    return True
+
+
+# WotLK's hidden paladin markers: Avenging Wrath Marker and Immune Shield
+# Marker, both 2 minutes. 1.12 had neither -- its Spell.dbc has no
+# Exclude*AuraSpell columns at all.
+WOTLK_PALADIN_MARKERS = {61987, 61988}
+
+
+def drop_wotlk_paladin_markers(row: dict) -> bool:
+    """Clears WotLK's marker auras from a Vanilla copy's exclude-aura
+    fields. Returns whether the row changed.
+
+    A ported row keeps WotLK's Exclude*AuraSpell, since the era had none to
+    give it, and Spell::PrepareTriggersExecutedOnHit applies a negative
+    excluded aura on hit. So Vanilla Divine Shield, Divine Protection and
+    Blessing of Protection still put WotLK's invisible 2-minute Immune
+    Shield Marker on their target, and its exclude check then refused the
+    next bubble for 2 minutes -- on top of the era's own 1-minute
+    Forbearance, which spell_era_pal_immunities applies and checks.
+    """
+    changed = False
+    for field in ("ExcludeCasterAuraSpell", "ExcludeTargetAuraSpell"):
+        if row[field] in WOTLK_PALADIN_MARKERS:
+            row[field] = 0
+            changed = True
+    return changed
+
+
+MECHANIC_BANDAGE = 16
+SPELL_PREVENTION_TYPE_PACIFY = 2
+
+
+def allow_bandage_while_pacified(rows: list[dict]) -> list[int]:
+    """Lets First Aid bandages be used while pacified, as in 1.12 and 2.4.
+
+    Bandages had no PreventionType before 3.0; WotLK gave them the pacify
+    one. Vanilla Divine Protection pacifies its paladin ("cannot attack or
+    use physical abilities"), so with WotLK's bandages a Vanilla paladin
+    could not bubble-bandage, which the era allowed. This is the shared
+    WotLK spell, so it applies to every era -- WotLK's own player bubbles
+    do not pacify, which keeps the change out of WotLK play.
+    """
+    changed = []
+    for row in rows:
+        if row["Mechanic"] == MECHANIC_BANDAGE and row["PreventionType"] == SPELL_PREVENTION_TYPE_PACIFY:
+            row["PreventionType"] = 0
+            changed.append(row["ID"])
+    return changed
+
+
+# --- Vanilla spell power coefficients ---------------------------------------
+#
+# A clone inherited WotLK's spell_bonus_data through build_era_spell_sql.py:
+# WotLK's coefficients, and WotLK's attack power scaling on spells that had
+# none in 1.12 (Exorcism, Holy Wrath, Thunder Clap, Revenge, Arcane Shot,
+# Multi-Shot ...). 1.12 had no table for most spells: the core derived the
+# coefficient from the cast time, duration and effects. This is that rule,
+# ported from vmangos (SpellEntry::GetCastTimeForBonus and
+# CalculateDefaultCoefficient), the 1.12 core. Healing uses it unchanged --
+# the realm restores Vanilla's separate +healing gear, which is what the
+# rule was measured against, so WotLK's x1.88 for spell power does not apply.
+
+SPELL_EFFECT_SCHOOL_DAMAGE = 2
+SPELL_EFFECT_ENVIRONMENTAL_DAMAGE = 7
+SPELL_EFFECT_POWER_DRAIN = 8
+SPELL_EFFECT_HEALTH_LEECH = 9
+SPELL_EFFECT_POWER_BURN = 62
+DIRECT_EFFECTS = {SPELL_EFFECT_SCHOOL_DAMAGE, SPELL_EFFECT_POWER_DRAIN, SPELL_EFFECT_HEALTH_LEECH,
+                  SPELL_EFFECT_ENVIRONMENTAL_DAMAGE, SPELL_EFFECT_POWER_BURN, SPELL_EFFECT_HEAL}
+SPELL_AURA_PERIODIC_DAMAGE = 3
+SPELL_AURA_PERIODIC_HEAL = 8
+SPELL_AURA_PERIODIC_LEECH = 53
+PERIODIC_AURAS = {SPELL_AURA_PERIODIC_DAMAGE, SPELL_AURA_PERIODIC_HEAL, SPELL_AURA_PERIODIC_LEECH}
+# Extra effects that cost a share of the coefficient: +1 = -5%, +2 = -10%.
+PENALTY_AURAS = {SPELL_AURA_DUMMY: 1, 33: 1, 5: 2, 12: 2, 26: 2}  # dummy, slow, confuse, stun, root
+# Implicit targets AzerothCore selects as an area or cone (SpellInfo.cpp's
+# target table): an area spell gets half the coefficient.
+AREA_TARGETS = {7, 8, 15, 16, 20, 24, 30, 31, 33, 34, 37, 51, 52, 54, 56, 59, 60, 61, 93, 104, 108}
+SPELL_ATTR1_CHANNELED = 0x4 | 0x40
+SPELL_SCHOOL_MASK_NORMAL = 1
+SPELL_DAMAGE_CLASS_MELEE, SPELL_DAMAGE_CLASS_RANGED = 2, 3
+
+# Coefficients 1.12 set by hand rather than by the rule, keyed by original
+# spell id: (direct, dot, ap_dot). Garrote: "$AP*0.03" per tick, from patch
+# 1.12.0 ("Garrote now increases in potency with greater attack power").
+VANILLA_BONUS_OVERRIDES = {
+    703: (0.0, 0.0, 0.03), 8631: (0.0, 0.0, 0.03), 8632: (0.0, 0.0, 0.03), 8633: (0.0, 0.0, 0.03),
+    11289: (0.0, 0.0, 0.03), 11290: (0.0, 0.0, 0.03),
+}
+
+
+# Channelled and ground-effect spells whose 1.12 coefficient the general
+# rule overstates: it gives Blizzard 100% and Mind Flay 81%, where the era's
+# measured values were a third and 45%. Total over the whole duration, keyed
+# by name so every rank is covered.
+VANILLA_DOT_TOTAL_BY_NAME = {
+    "Blizzard": 1 / 3, "Rain of Fire": 1 / 3, "Hurricane": 1 / 3, "Consecration": 1 / 3, "Mind Flay": 0.45,
+}
+SPELL_EFFECT_PERSISTENT_AREA_AURA = 27
+
+
+def vanilla_coefficients(row: dict, cast_ms: int, duration_ms: int) -> tuple[float, float] | None:
+    """(direct, per-tick dot) spell power coefficients under the 1.12 rule,
+    or None when the spell has nothing to scale."""
+    # A persistent area aura (Consecration, Blizzard) carries its periodic
+    # aura on the ground effect rather than an APPLY_AURA.
+    effects = [(row[f"Effect_{i}"], row[f"EffectAura_{i}"]
+                if row[f"Effect_{i}"] in (SPELL_EFFECT_APPLY_AURA, SPELL_EFFECT_PERSISTENT_AREA_AURA) else 0)
+               for i in range(3)]
+    direct = any(e in DIRECT_EFFECTS for e, _ in effects)
+    periodic = any(a in PERIODIC_AURAS for _, a in effects)
+    if not direct and not periodic:
+        return None
+    # Physical abilities did not scale with spell damage at all.
+    if row["SchoolMask"] == SPELL_SCHOOL_MASK_NORMAL or (
+            row["DefenseType"] in (SPELL_DAMAGE_CLASS_MELEE, SPELL_DAMAGE_CLASS_RANGED)
+            and not row["SchoolMask"] & ~SPELL_SCHOOL_MASK_NORMAL):
+        return (0.0, 0.0)
+
+    channeled = bool(row["AttributesEx"] & SPELL_ATTR1_CHANNELED)
+    area = any(row[f"ImplicitTargetA_{i}"] in AREA_TARGETS or row[f"ImplicitTargetB_{i}"] in AREA_TARGETS
+               or row[f"Effect_{i}"] == SPELL_EFFECT_PERSISTENT_AREA_AURA for i in range(3))
+    leech = any(e == SPELL_EFFECT_HEALTH_LEECH or a == SPELL_AURA_PERIODIC_LEECH for e, a in effects)
+    penalties = sum(PENALTY_AURAS.get(a, 0) for _, a in effects)
+    over_time = duration_ms if periodic and duration_ms > 0 else 0
+
+    def cast_time_for_bonus(dot: bool) -> float:
+        t = min(max(duration_ms if channeled else cast_ms, 1500), 7000)
+        if dot and not channeled:
+            t = 3500
+        if over_time and direct:
+            original = min(max(cast_ms, 1500), 7000)
+            share_dot = (over_time / 15000) / ((over_time / 15000) + (original / 3500))
+            t = int(t * share_dot) if dot else (int(t * (1 - share_dot)) if share_dot < 1 else 0)
+        if area:
+            t //= 2
+        if leech:
+            t //= 2
+        return t * 0.95 ** penalties
+
+    def max_ticks() -> int:
+        d = min(duration_ms, 30000)
+        if d <= 0:
+            return 1
+        for i in range(3):
+            if effects[i][1] in PERIODIC_AURAS:
+                period = row[f"EffectAuraPeriod_{i}"]
+                return d // period if period else 6
+        return 6
+
+    direct_coeff = cast_time_for_bonus(False) / 3500 if direct else 0.0
+    dot_coeff = 0.0
+    total = VANILLA_DOT_TOTAL_BY_NAME.get(row["Name_lang"]["enUS"])
+    if periodic and total is not None:
+        dot_coeff = total / max(max_ticks(), 1)
+    elif periodic:
+        factor = 1.0 if channeled else max(duration_ms, 0) / 15000
+        dot_coeff = cast_time_for_bonus(True) / 3500 * factor / max(max_ticks(), 1)
+    return (round(direct_coeff, 4), round(dot_coeff, 4))
+
+
 def class_spell_ids(sla: DbcFile, class_lines: set[int]) -> set[int]:
     """Spells a player character of some class can know.
 
@@ -796,19 +1053,30 @@ def build_clone(
         clone["NameSubtext_lang"] = new_loc_string(strings, era_rank, locale_count)
         changed.append("NameSubtext_lang")
 
-    # The tooltip too, but only when the effect layout changed. WotLK's text
-    # is kept otherwise because its $s1-style tokens resolve against the
-    # clone's own, era-correct values. Once the effects moved, those tokens
-    # point at effects the era spell does not have and the text describes
-    # the WotLK mechanic: TBC Aspect of the Viper read "gain $s1% of maximum
-    # mana ... based on the speed of your ranged weapon", a 3.x mechanic,
-    # showing 55%. The era's own text describes what the clone now does.
-    if effect_layout(era_row) != effect_layout(wotlk_row):
-        for field in ("Description_lang", "AuraDescription_lang"):
-            text = era_row[field]["enUS"]
-            if text != wotlk_row[field]["enUS"]:
-                clone[field] = new_loc_string(strings, text, locale_count)
-                changed.append(field)
+    # The name and tooltip come from the era too. Keeping WotLK's text was
+    # the first approach, on the grounds that its $s1-style tokens resolve
+    # against the clone's own era values -- but the text still describes the
+    # WotLK spell around those numbers. Players saw Vanilla Lay on Hands warn
+    # about Avenging Wrath, "Hand of Protection" where Vanilla had Blessing of
+    # Protection, a 2-minute Forbearance, TBC Aspect of the Viper describing
+    # the 3.x mana mechanic, and the 3.0 pushback "reduction" where the era
+    # rolled a chance (core patch 0003). The era's own text describes what
+    # the clone now does. Tokens naming another spell ($20187s3) are pointed
+    # at that spell's era copy afterwards, by remap_era_text_refs.
+    for field in ("Name_lang", "Description_lang", "AuraDescription_lang"):
+        text = era_row[field]["enUS"]
+        if text != wotlk_row[field]["enUS"]:
+            clone[field] = new_loc_string(strings, text, locale_count)
+            changed.append(field)
+
+    # Vanilla Holy Light and Flash of Light heal through SCRIPT_EFFECT: the
+    # 1.12 core turned it into the heal (and a Libram bonus) by hand. This
+    # core has no such handler, so the clone cast and healed nothing. WotLK's
+    # row carries the plain HEAL in the same slot with the same targets.
+    for i in range(3):
+        if clone[f"Effect_{i}"] == SPELL_EFFECT_SCRIPT_EFFECT and wotlk_row[f"Effect_{i}"] == SPELL_EFFECT_HEAL:
+            clone[f"Effect_{i}"] = SPELL_EFFECT_HEAL
+            changed.append(f"Effect_{i}")
 
     if tag:
         text = f"{wotlk_row['Name_lang']['enUS']} [{tag}]"
@@ -982,6 +1250,7 @@ def main() -> int:
         valid_skill_lines_for_port = wotlk_skill_lines
 
         new_rows: list[dict] = []
+        era_bonus: dict[str, dict[str, list[float]]] = {}
         era_ported: dict[str, dict[str, dict]] = {cfg["label"]: {} for cfg in ERA_CONFIG.values()}
         reused_ids: dict[str, list[int]] = {}
         era_rank_links: dict[str, list[list[int]]] = {}
@@ -1004,6 +1273,11 @@ def main() -> int:
             era_by_id = {r["ID"]: r for r in era_spell.rows}
 
             wanted = era_class_ids[era] & set(era_by_id)
+            extra = era_side_spells(wanted, era_by_id)
+            if extra - wanted:
+                print(f"[{label}] +{len(extra - wanted)} spell(s) named by seals or era rules "
+                      f"(judgements, Forbearance)", file=sys.stderr)
+                wanted |= extra
             # Close over rank chains. Whether a rank is reachable through
             # SkillLineAbility varies within a single chain -- Pummel and
             # Nature Resist rank 1 have no row in either era client while
@@ -1026,6 +1300,7 @@ def main() -> int:
                 wanted &= only
             print(f"[{label}] {len(wanted)} class spells to consider", file=sys.stderr)
 
+            era_rows_start = len(new_rows)
             cloned = 0
             identical = 0
             ported_direct = 0
@@ -1170,6 +1445,36 @@ def main() -> int:
                       f"reference; {len(unportable)} referenced id(s) absent from the era client too "
                       f"{sorted(unportable)}", file=sys.stderr)
 
+            era_ids = {int(k): v for k, v in era_map.items()}
+            retexted = 0
+            for row in new_rows[era_rows_start:]:
+                for field in ("Description_lang", "AuraDescription_lang"):
+                    text = row[field]["enUS"]
+                    remapped = remap_era_text_refs(text, era_ids)
+                    if remapped != text:
+                        row[field] = new_loc_string(strings, remapped, locale_count)
+                        retexted += 1
+            print(f"[{label}] pointed {retexted} tooltip(s) at this era's copies of the spells they name",
+                  file=sys.stderr)
+
+            if label == "Vanilla":
+                by_id = {r["ID"]: r for r in new_rows[era_rows_start:]}
+                casts = {r["ID"]: r["Base"] for r in wotlk_tables["SpellCastTimes.dbc"].rows}
+                durations = {r["ID"]: r["Duration"] for r in wotlk_tables["SpellDuration.dbc"].rows}
+                bonus: dict[str, list[float]] = {}
+                for base_id, clone_id in era_ids.items():
+                    row = by_id[clone_id]
+                    if base_id in VANILLA_BONUS_OVERRIDES:
+                        bonus[str(clone_id)] = list(VANILLA_BONUS_OVERRIDES[base_id])
+                        continue
+                    coeffs = vanilla_coefficients(row, casts.get(row["CastingTimeIndex"], 0),
+                                                  durations.get(row["DurationIndex"], 0))
+                    if coeffs is not None:
+                        bonus[str(clone_id)] = [coeffs[0], coeffs[1], 0.0]
+                era_bonus[label] = bonus
+                print(f"[{label}] {len(bonus)} spell power coefficient(s) under the 1.12 rule",
+                      file=sys.stderr)
+
             not_trainable = untrainable_ported(
                 era_ported[label], era_by_id, era_sla_by_spell[label],
                 class_skill_lines(root), talent_rank_spells(era, root, tmp))
@@ -1206,6 +1511,14 @@ def main() -> int:
         shields = [r["ID"] for r in new_rows if as_immune_shield(r)]
         print(f"  tagged {len(shields)} era immunity bubble(s) as WotLK immune shields: {shields}",
               file=sys.stderr)
+        seals = [r["ID"] for r in new_rows if as_wotlk_seal(r)]
+        print(f"  gave {len(seals)} ported era seal(s) a WotLK seal family bit: {seals}", file=sys.stderr)
+        vanilla = range(ERA_CONFIG["1.12.1"]["id_offset"], ERA_CONFIG["2.4.3"]["id_offset"])
+        unmarked = [r["ID"] for r in new_rows if r["ID"] in vanilla and drop_wotlk_paladin_markers(r)]
+        print(f"  dropped WotLK's paladin marker auras from {len(unmarked)} Vanilla row(s): {unmarked}",
+              file=sys.stderr)
+        bandages = allow_bandage_while_pacified(base.rows)
+        print(f"  {len(bandages)} bandage spell(s) usable while pacified again", file=sys.stderr)
         offsets = sorted((cfg["id_offset"] for cfg in ERA_CONFIG.values()), reverse=True)
         rewritten = [r["ID"] for r in new_rows if r["ID"] >= offsets[-1]
                      and apply_era_talent_rewrites(r, r["ID"] - next(o for o in offsets if r["ID"] >= o))]
@@ -1253,7 +1566,8 @@ def main() -> int:
         out_map = args.out_dir / "era-spell-map.json"
         out_map.write_text(json.dumps(
             {"id_map": id_map, "deleted_by_wotlk": skipped_missing_wotlk,
-             "ported": era_ported, "reused": reused_ids, "supersede": era_rank_links},
+             "ported": era_ported, "reused": reused_ids, "supersede": era_rank_links,
+             "bonus": era_bonus},
             indent=2), encoding="utf-8")
         for label, ids in reused_ids.items():
             print(f"[{label}] {len(ids)} id(s) WotLK reused for a different spell, ported whole "

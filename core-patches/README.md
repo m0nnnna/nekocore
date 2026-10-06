@@ -18,3 +18,16 @@ can't be done from a module hook. Apply from the AzerothCore root with
   Wrath's crowd-control immunity in `SpellInfo`, `SpellInfoCorrections` and
   `Spell::CheckCasterAuras`. A module hook cannot reach any of these: they
   run inside the death path and the aura/immunity setup.
+- `0003-era-pushback-resist-is-a-chance.patch` -- 1.12/2.4 rolled the summed
+  pushback-resist value (Concentration Aura, Spiritual Focus, Healing Focus,
+  Fel Concentration, Earth Shield, ...) as a chance to lose no casting time
+  at all. 3.0 kept the same DBC fields but made them a flat reduction of the
+  delay. `Spell::Delayed` / `Spell::DelayedChannel` now roll for era copies
+  (id 300000-499999), so a Vanilla/TBC character gets its era's mechanic.
+  `build_era_spells.py` takes the era tooltip for those spells to match.
+- `0004-vanilla-spell-level-penalty.patch` -- `Unit::CalculateLevelPenalty`
+  gives Vanilla copies (id 300000-399999) 1.12's rule: only spells below
+  level 20 lose spell power, 3.75% per level short. The stock function also
+  scales by `(SpellLevel + 6) / level` (a 2.0 downranking penalty) and skips
+  spells whose MaxLevel is not above their level. It pairs with the 1.12
+  coefficients `build_era_spells.py` derives for Vanilla copies.

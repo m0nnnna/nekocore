@@ -158,6 +158,13 @@ public:
         uint32 newMaxHealth = uint32(abInfo->initialMaxHealth * multiplier);
         creature->SetMaxHealth(newMaxHealth);
         creature->SetHealth(uint32(newMaxHealth * healthPct / 100.0f));
+        // The core only allows loot, XP and quest credit once players have
+        // dealt half the creature's health (IsDamageEnoughForLootingAndReward),
+        // and set that requirement at spawn from the UNSCALED health.
+        // SetMaxHealth does not touch it, so a solo player against an elite
+        // cut to 40% could never reach it: Hogger died with no loot and no
+        // Huge Gnoll Claw. Measure it against the health actually fought.
+        creature->ResetPlayerDamageReq();
 
         LOG_DEBUG("module.nekocore", "WorldEliteScaling: {} ({}) engaged on map {} with {} nearby player(s) (baseline {}) -> multiplier {:.2f}, maxHealth {}->{}",
             creature->GetName(), creature->GetEntry(), creature->GetMapId(), nearby, baseline, multiplier,

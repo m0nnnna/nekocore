@@ -127,8 +127,12 @@ function neko_start_playing(bool $with_warning = true): void
     ?>
     <ul class="dl">
         <li>
-            <a class="btn btn--coral btn--block" href="<?= e($neko['patch_url']) ?>" download><?= neko_icon('download') ?> Get the patch</a>
-            <small>Extract into your 3.3.5a (enUS) WoW folder, replacing files when asked. It sets the server address too.</small>
+            <a class="btn btn--coral btn--block" href="<?= e($neko['launcher_url']) ?>"><?= neko_icon('download') ?> Get the launcher</a>
+            <small>Windows. Point it at your 3.3.5a (enUS) WoW folder and press Play: it installs the patch, keeps it up to date and sets the server address. Windows may warn about an unknown publisher the first time.</small>
+        </li>
+        <li>
+            <a class="btn btn--ghost btn--block" href="<?= e($neko['patch_url']) ?>" download><?= neko_icon('download') ?> Or just the patch</a>
+            <small>Extract into your WoW folder, replacing files when asked. Re-download it after every update.</small>
         </li>
     </ul>
     <div class="server-addr">

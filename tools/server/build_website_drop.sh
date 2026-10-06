@@ -33,7 +33,7 @@ echo "==> website tree -> $DROP_DIR/tree/website"
 mkdir -p "$DROP_DIR/tree/website/downloads"
 cp "$REPO/website/docker.env" "$REPO/website/docker.env.example" "$REPO/website/docker-compose.website.yml" "$DROP_DIR/tree/website/"
 cp "$REPO/website/downloads/realmlist.wtf" "$DROP_DIR/tree/website/downloads/"
-cp "$PATCH_ZIP" "$DROP_DIR/tree/website/downloads/"
+cp "$PATCH_ZIP" "$PATCH_MANIFEST" "$DROP_DIR/tree/website/downloads/"
 cp "$REPO/tools/server/update-website-from-mount.sh" "$DROP_DIR/"
 
 echo "==> done: $(date '+%Y-%m-%d %H:%M')"

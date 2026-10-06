@@ -85,6 +85,27 @@ namespace NekoEraSpells
         return GetTalentSpellPos(spellId) != nullptr;
     }
 
+    /// The WotLK gathering perks: Toughness (Mining), Master of Anatomy
+    /// (Skinning) and Lifeblood (Herbalism), every rank. SkillLineAbility
+    /// grants them automatically as the skill rises (AcquireMethod 1), so
+    /// they bypass trainers entirely and have no era copy to swap to --
+    /// Vanilla and TBC simply did not have them.
+    inline bool IsWotlkOnlyProfessionPerk(uint32 spellId)
+    {
+        switch (spellId)
+        {
+            case 53120: case 53121: case 53122: case 53123: case 53124: case 53040: // Toughness
+            case 53125: case 53662: case 53663: case 53664: case 53665: case 53666: // Master of Anatomy
+            case 55428: case 55480: case 55500: case 55501: case 55502: case 55503: // Lifeblood
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// Skill lines whose rewarded spells include those perks.
+    constexpr uint32 PERK_SKILL_LINES[] = { 186 /*Mining*/, 393 /*Skinning*/, 182 /*Herbalism*/ };
+
     /// Moves every class spell the character holds onto `targetEra`'s own
     /// copies, dropping any that era does not have, and drags the action
     /// bars along. Returns how many spells changed. Defined in

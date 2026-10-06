@@ -53,6 +53,8 @@ over CharBaseInfo).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -296,6 +298,52 @@ def deploy_addons(wotlk_root: Path) -> None:
         print(f"Deployed addon -> {dest}")
 
 
+# The patch's version, stamped into three places that must agree: the
+# NekoPatchCheck addon (which reports it in game), the file the worldserver
+# compares that report against (bind-mounted, see the override), and the
+# launcher manifest next to the bundle zip.
+PATCH_CHECK_ADDON = "NekoPatchCheck"
+PATCH_VERSION_LUA = ADDONS_DIR / PATCH_CHECK_ADDON / "Version.lua"
+PATCH_VERSION_FILE = GENERATED_DIR / "patch-version.txt"
+
+
+def stamp_patch_version() -> str:
+    """Hashes what a player installs (the MPQ and the player addons, minus
+    the version file itself) into a short version and writes it out. A
+    content hash, not a counter: rebuilding the same patch gives the same
+    version, so nobody is told to update for nothing."""
+    h = hashlib.sha256(STAGED_MPQ.read_bytes())
+    for addon_dir in player_addon_dirs():
+        for f in sorted(p for p in addon_dir.rglob("*") if p.is_file()):
+            if f == PATCH_VERSION_LUA:
+                continue
+            h.update(f"{addon_dir.name}/{f.relative_to(addon_dir).as_posix()}".encode())
+            h.update(f.read_bytes())
+    version = h.hexdigest()[:10]
+    PATCH_VERSION_LUA.write_text(
+        "-- Written by tools/install_patch/install_client.py; do not edit.\n"
+        f'NEKO_PATCH_VERSION = "{version}"\n', encoding="utf-8")
+    PATCH_VERSION_FILE.write_text(version + "\n", encoding="utf-8")
+    print(f"Patch version {version} -> {PATCH_VERSION_LUA.relative_to(REPO_ROOT)}, "
+          f"{PATCH_VERSION_FILE.relative_to(REPO_ROOT)}")
+    return version
+
+
+def write_manifest(zip_path: Path, version: str) -> None:
+    """<zip>.json beside the bundle: what the launcher reads to decide
+    whether to download, and to verify what it downloaded."""
+    data = zip_path.read_bytes()
+    manifest = {
+        "version": version,
+        "file": zip_path.name,
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+    out = zip_path.with_suffix(".json")
+    out.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {out}")
+
+
 def write_bundle_zip(out: Path, mpq_name: str, realm: str) -> None:
     """Everything a player drops over a stock client: Data/<mpq>, the realmlist
     and Interface/AddOns/*, so extracting it is the whole setup."""
@@ -354,11 +402,13 @@ def main() -> int:
         package_mpq()
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 
+    version = stamp_patch_version() if STAGED_MPQ.exists() else None
     deploy_addons(args.wotlk_root)
     if args.bundle_zip:
-        if args.addons_only and not STAGED_MPQ.exists():
+        if version is None:
             raise SystemExit("--bundle-zip needs a packaged MPQ; drop --addons-only")
         write_bundle_zip(args.bundle_zip, "patch-Z.mpq", args.realm)
+        write_manifest(args.bundle_zip, version)
 
     if args.addons_only:
         print("\nDone. /reload is enough to pick up addon changes.")

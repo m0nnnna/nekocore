@@ -56,6 +56,14 @@ namespace
     void MigrateSpellsForEraChange(Player* player, NekoEraSpells::Era newEra, char const* newEraLabel)
     {
         uint32 const changed = NekoEraSpells::ReconcileSpellsToEra(player, newEra);
+
+        // Entering WotLK unlocks the gathering perks the earlier eras
+        // withheld; grant them now rather than at the next login.
+        if (newEra == NekoEraSpells::ERA_WOTLK)
+            for (uint32 skill : NekoEraSpells::PERK_SKILL_LINES)
+                if (player->HasSkill(skill))
+                    player->learnSkillRewardedSpells(skill, player->GetPureSkillValue(skill));
+
         if (!changed)
             return;
 

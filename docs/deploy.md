@@ -78,6 +78,17 @@ in sync. `website/downloads/realmlist.wtf` still ships but nothing links it.
    player addons. `DEV_ONLY_ADDONS` in `install_client.py` (NekoTalentDebug)
    goes to the dev client and nowhere else. See `docs/third-party-mods.md`.
 
+   The site's main button is the **NekoCore Launcher** (`NEKO_LAUNCHER_URL`,
+   released from m0nnnna/wotlk-client-tools). It installs and updates this
+   zip by reading `downloads/nekocore-patch.json`, which the same command
+   writes. Every patch build also stamps one version, a hash of the MPQ and
+   the addons, into three places: that manifest, the `NekoPatchCheck` addon's
+   `Version.lua`, and `data/generated/patch-version.txt`. The realm
+   bind-mounts the last one and `src/PatchCheck.cpp` compares it with what
+   the addon reports at login. A player on an old patch gets a popup, and a
+   player with no patch at all gets a chat line. `check_patch_zip.sh`
+   refuses a drop where the manifest and `patch-version.txt` disagree.
+
    **Rebuild it whenever anything under `data/generated/` or
    `client-patch/Interface/` changes** -- the client's DBCs must match the
    ones the realm bind-mounts. Both drop builders (`build_deploy_drop.sh`,

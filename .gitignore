@@ -36,3 +36,7 @@ website/downloads/*
 # this repo -- our custom code reaches it via tools/server/sync_module.py,
 # core-patches/, and server/docker-compose.override.yml.
 /server/
+
+# Stamped by install_client.py on every patch build (stamp_patch_version).
+client-patch/Interface/AddOns/NekoPatchCheck/Version.lua
+data/generated/patch-version.txt

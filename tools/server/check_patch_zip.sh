@@ -18,3 +18,19 @@ if [ -n "$stale" ]; then
     echo "rebuild it first: $PATCH_REBUILD" >&2
     exit 1
 fi
+
+# The launcher manifest and the version the realm checks against must come
+# from the same build as the zip (install_client.py writes all three), or
+# the realm tells every player with the new patch to update.
+PATCH_MANIFEST="$REPO/website/downloads/nekocore-patch.json"
+PATCH_VERSION_FILE="$REPO/data/generated/patch-version.txt"
+for f in "$PATCH_MANIFEST" "$PATCH_VERSION_FILE"; do
+    [ -f "$f" ] || { echo "error: $f missing -- rebuild the patch: $PATCH_REBUILD" >&2; exit 1; }
+done
+manifest_version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$PATCH_MANIFEST")
+realm_version=$(tr -d '[:space:]' < "$PATCH_VERSION_FILE")
+if [ "$manifest_version" != "$realm_version" ]; then
+    echo "error: launcher manifest says patch $manifest_version, the realm expects $realm_version" >&2
+    echo "rebuild the patch: $PATCH_REBUILD" >&2
+    exit 1
+fi

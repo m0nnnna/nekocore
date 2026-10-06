@@ -25,6 +25,7 @@
 #include "SpellMgr.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
+#include "Item.h"
 
 #include "EraSpells.h"
 
@@ -55,6 +56,33 @@ namespace
     }
 }
 
+namespace
+{
+    /// Vanilla Judgement of Command is itself a DUMMY whose amount names the
+    /// damage spell (20425 -> 20467), and the 1.12 core cast that by hand,
+    /// "doubled if the target is stunned". Casting the dummy here did
+    /// nothing. Every other judgement is cast as it is.
+    void CastEraJudgement(Unit* caster, Unit* target, NekoEraSpells::Era era, uint32 judgement)
+    {
+        using namespace NekoEraSpells;
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(judgement);
+        if (info && info->Effects[EFFECT_0].IsEffect(SPELL_EFFECT_DUMMY))
+        {
+            uint32 const named = static_cast<uint32>(info->Effects[EFFECT_0].CalcValue(caster));
+            uint32 const damageSpell = EraSpellFor(era, named) ? EraSpellFor(era, named) : named;
+            if (SpellInfo const* damageInfo = sSpellMgr->GetSpellInfo(damageSpell))
+            {
+                int32 damage = damageInfo->Effects[EFFECT_0].CalcValue(caster);
+                if (target->HasUnitState(UNIT_STATE_STUNNED))
+                    damage *= 2;
+                caster->CastCustomSpell(damageSpell, SPELLVALUE_BASE_POINT0, damage, target, true);
+                return;
+            }
+        }
+        caster->CastSpell(target, judgement, true);
+    }
+}
+
 // Judgement (Vanilla 20271 / TBC 20271): "Unleashes the energy of a Seal
 // spell to judge an enemy". Casts the active seal's judgement on the target
 // and consumes the seal -- in these eras judging used the seal up, unlike
@@ -80,7 +108,7 @@ class spell_era_pal_judgement : public SpellScript
         uint32 const judgement = EraSpellFor(era, named) ? EraSpellFor(era, named) : named;
         SpellInfo const* sealInfo = sealEff->GetSpellInfo();
 
-        caster->CastSpell(target, judgement, true);
+        CastEraJudgement(caster, target, era, judgement);
 
         // Sanctified Judgement: "$s1% chance to return 80% of the mana cost
         // of the judged seal". The chance is the talent rank's own amount.
@@ -341,8 +369,118 @@ class spell_era_warl_improved_drain_soul : public AuraScript
     }
 };
 
+// Seal of Righteousness (Vanilla 21084 / 20154, 20287-20293): "granting
+// each melee attack an additional $/87;s1 to $/25;s1 Holy damage. Slower
+// weapons cause more Holy damage per swing." The seal is a melee-hit DUMMY
+// the 1.12 core turned into damage, so the numbers are that core's, as
+// vmangos has them: the seal's own amount over 87 for a 1.5 speed weapon,
+// over 25 for a 4.0 one, straight line between; Improved Seal of
+// Righteousness adds its percent to that base; spell damage adds 10% (one-
+// hand) or 12.5% (two-hand) of Holy spell power. WotLK's
+// spell_pal_seal_of_righteousness is the 3.0 formula (AP and spell power by
+// weapon speed) and was only bound to rank 1, so ranks 2-8 never hit.
+class spell_era_pal_seal_of_righteousness : public AuraScript
+{
+    PrepareAuraScript(spell_era_pal_seal_of_righteousness);
+
+    static constexpr uint32 SEAL_OF_RIGHTEOUSNESS_DAMAGE = 25742;
+    static constexpr uint32 IMPROVED_SEAL_OF_RIGHTEOUSNESS[] = { 20224, 20225, 20330, 20331, 20332 };
+    static constexpr float MIN_SPEED = 1.5f;
+    static constexpr float MAX_SPEED = 4.0f;
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SEAL_OF_RIGHTEOUSNESS_DAMAGE });
+    }
+
+    bool CheckProc(ProcEventInfo& eventInfo)
+    {
+        Unit* target = eventInfo.GetProcTarget();
+        return GetTarget()->IsPlayer() && target && target->IsAlive();
+    }
+
+    void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+    {
+        PreventDefaultAction();
+
+        Player* player = GetTarget()->ToPlayer();
+        Unit* victim = eventInfo.GetProcTarget();
+        Item const* weapon = player->GetWeaponForAttack(BASE_ATTACK, true);
+        float const speed = weapon ? weapon->GetTemplate()->Delay / 1000.0f : BASE_ATTACK_TIME / 1000.0f;
+        bool const twoHand = weapon && weapon->GetTemplate()->InventoryType == INVTYPE_2HWEAPON;
+
+        float const amount = float(aurEff->GetAmount());
+        float const minDamage = amount / 87.0f;
+        float const maxDamage = amount / 25.0f;
+        float damage = (maxDamage - minDamage) * ((speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)) + minDamage;
+
+        for (uint32 talent : IMPROVED_SEAL_OF_RIGHTEOUSNESS)
+            if (AuraEffect const* improved = player->GetAuraEffect(talent, EFFECT_0))
+                if (improved->GetAmount() > 0)
+                    damage += damage * improved->GetAmount() / 100.0f;
+
+        damage += player->SpellBaseDamageBonusDone(SPELL_SCHOOL_MASK_HOLY) * (twoHand ? 0.125f : 0.10f);
+
+        int32 const bp = std::max<int32>(0, int32(damage + 0.5f));
+        player->CastCustomSpell(SEAL_OF_RIGHTEOUSNESS_DAMAGE, SPELLVALUE_BASE_POINT0, bp, victim, true, nullptr, aurEff);
+    }
+
+    void Register() override
+    {
+        DoCheckProc += AuraCheckProcFn(spell_era_pal_seal_of_righteousness::CheckProc);
+        OnEffectProc += AuraEffectProcFn(spell_era_pal_seal_of_righteousness::HandleProc, EFFECT_0, SPELL_AURA_DUMMY);
+    }
+};
+
+// Divine Shield, Divine Protection, Blessing of Protection (Vanilla): "Once
+// protected, the target cannot be made invulnerable by Divine Shield, Divine
+// Protection or Blessing of Protection again for $25771d." -- the era's own
+// Forbearance, 1 minute where WotLK's lasts 2, and nothing about Avenging
+// Wrath, which Vanilla did not have. Replaces WotLK's spell_pal_immunities.
+class spell_era_pal_immunities : public SpellScript
+{
+    PrepareSpellScript(spell_era_pal_immunities);
+
+    static constexpr uint32 FORBEARANCE = 25771;
+
+    uint32 Forbearance()
+    {
+        uint32 const eraCopy = EraSpellFor(EraOfSpell(GetSpellInfo()->Id), FORBEARANCE);
+        return eraCopy ? eraCopy : FORBEARANCE;
+    }
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ FORBEARANCE });
+    }
+
+    SpellCastResult CheckCast()
+    {
+        Unit* target = GetExplTargetUnit();
+        if (!target)
+            target = GetCaster();
+        if (target->HasAura(Forbearance()))
+            return SPELL_FAILED_TARGET_AURASTATE;
+        return SPELL_CAST_OK;
+    }
+
+    void ApplyForbearance()
+    {
+        if (Unit* target = GetHitUnit())
+            GetCaster()->AddAura(Forbearance(), target);
+    }
+
+    void Register() override
+    {
+        OnCheckCast += SpellCheckCastFn(spell_era_pal_immunities::CheckCast);
+        AfterHit += SpellHitFn(spell_era_pal_immunities::ApplyForbearance);
+    }
+};
+
 void AddSC_era_spell_scripts()
 {
+    RegisterSpellScript(spell_era_pal_seal_of_righteousness);
+    RegisterSpellScript(spell_era_pal_immunities);
     RegisterSpellScript(spell_era_dru_furor);
     RegisterSpellScript(spell_era_warl_improved_drain_soul);
     RegisterSpellScript(spell_era_mag_cold_snap);

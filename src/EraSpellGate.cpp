@@ -170,6 +170,9 @@ public:
             return spellEra == playerEra;
         }
 
+        if (playerEra != ERA_WOTLK && IsWotlkOnlyProfessionPerk(spellId))
+            return false;
+
         if (inSubstitution || playerEra == ERA_WOTLK || IsTalentRankSpell(spellId))
             return true;
 
