@@ -79,6 +79,11 @@ THIRD_PARTY = REPO_ROOT / "third-party"
 THIRD_PARTY_ADDONS = [
     THIRD_PARTY / "Prestige-and-Draft-Mode" / "Client Side Files" / "Client Addon" / "PrestigeSystem",
 ]
+# Our Questie fork (tools/third_party/fetch.py), staged by stage_questie() as
+# the runtime files only, in the folder name the 3.3.5 client loads it under.
+QUESTIE_SOURCE = THIRD_PARTY / "Questie-NekoCore"
+QUESTIE_STAGED = THIRD_PARTY / "_staged" / "Questie-335"
+THIRD_PARTY_ADDONS.append(QUESTIE_STAGED)
 # deployed to the dev client, never shipped to players (bundle zip, full client zip)
 DEV_ONLY_ADDONS = {"NekoTalentDebug"}
 # the realm both player zips point realmlist.wtf at (the site shows the same
@@ -278,6 +283,32 @@ def deploy_mpq(wotlk_root: Path, mpq_name: str) -> None:
     print(f"Deployed -> {dest}")
 
 
+def stage_questie() -> None:
+    """Copies what Questie loads at runtime into QUESTIE_STAGED: the same set
+    upstream's build.py releases, plus the 3.3.5 fork's Compat layer and its
+    own TOC. Leaves out .git, the 71 MB of ExternalScripts, the CLI and tests,
+    none of which a player needs."""
+    if not (QUESTIE_SOURCE / "Questie-335.toc").is_file():
+        print(f"warning: {QUESTIE_SOURCE} missing -- run tools/third_party/fetch.py Questie-NekoCore; "
+              "the patch ships without Questie", file=sys.stderr)
+        shutil.rmtree(QUESTIE_STAGED, ignore_errors=True)
+        return
+    shutil.rmtree(QUESTIE_STAGED, ignore_errors=True)
+    QUESTIE_STAGED.mkdir(parents=True)
+    ignore = shutil.ignore_patterns("*.test.lua", "ExtractMapData")
+    for d in ("Compat", "Database", "Icons", "Libs", "Localization", "Modules"):
+        shutil.copytree(QUESTIE_SOURCE / d, QUESTIE_STAGED / d, ignore=ignore)
+    for f in ("embeds.xml", "Questie.lua", "Questie-335.toc"):
+        shutil.copy2(QUESTIE_SOURCE / f, QUESTIE_STAGED / f)
+    # Questie-335.toc only loads the Wotlk translation lookups (they cover all
+    # three expansions); the Classic/TBC ones are for the -Classic/-TBC TOCs.
+    # 54 MB we'd otherwise ship. Removed by path: Database/Classic and
+    # Database/TBC share the names and are needed.
+    for unused in ("Classic", "TBC"):
+        shutil.rmtree(QUESTIE_STAGED / "Localization" / "lookups" / unused)
+    print(f"Staged Questie -> {QUESTIE_STAGED}")
+
+
 def addon_dirs() -> list[Path]:
     ours = sorted(p for p in ADDONS_DIR.iterdir() if p.is_dir())
     theirs = [p for p in THIRD_PARTY_ADDONS if p.is_dir()]
@@ -402,6 +433,7 @@ def main() -> int:
         package_mpq()
         deploy_mpq(args.wotlk_root, "patch-Z.mpq")
 
+    stage_questie()
     version = stamp_patch_version() if STAGED_MPQ.exists() else None
     deploy_addons(args.wotlk_root)
     if args.bundle_zip:

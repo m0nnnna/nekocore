@@ -11,7 +11,10 @@ if [ ! -f "$PATCH_ZIP" ]; then
     exit 1
 fi
 stale=$( { find "$REPO/data/generated" -name '*.dbc' -newer "$PATCH_ZIP"
-           find "$REPO/client-patch/Interface" -type f -newer "$PATCH_ZIP"; } | head -5)
+           find "$REPO/client-patch/Interface" -type f -newer "$PATCH_ZIP"
+           # the Questie fork install_client.py stages into the zip (fetch.py pin)
+           [ -d "$REPO/third-party/Questie-NekoCore" ] && \
+               find "$REPO/third-party/Questie-NekoCore" -name .git -prune -o -type f -newer "$PATCH_ZIP" -print; } | head -5)
 if [ -n "$stale" ]; then
     echo "error: $PATCH_ZIP is older than:" >&2
     echo "$stale" | sed 's/^/    /' >&2
