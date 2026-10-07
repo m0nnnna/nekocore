@@ -185,6 +185,30 @@ class spell_nekocore_mana_burn_scaling_e2 : public SpellScript
 
 #undef NEKOCORE_MANA_BURN_SCALE_BODY
 
+// Mana DRAIN (SPELL_EFFECT_POWER_DRAIN) has the same flaw as burn: a flat
+// amount straight from Spell.dbc that AutoBalance never sees. It deals no
+// health damage, so only the effect value needs scaling, and
+// Spell::EffectPowerDrain runs in HIT_TARGET mode, not LAUNCH_TARGET.
+// Razorclaw the Butcher's Butcher Drain (7485) takes 350 mana every
+// 2.8-9.7 s, which empties a solo level-24 caster in two or three casts.
+class spell_nekocore_mana_drain_scaling_e0 : public SpellScript
+{
+    PrepareSpellScript(spell_nekocore_mana_drain_scaling_e0);
+
+    void ScaleEffectValue(SpellEffIndex /*effIndex*/)
+    {
+        float multiplier = ScaledDamageMultiplierOf(GetCaster());
+        if (multiplier == 1.0f)
+            return;
+        SetEffectValue(int32(GetEffectValue() * multiplier));
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_nekocore_mana_drain_scaling_e0::ScaleEffectValue, EFFECT_0, SPELL_EFFECT_POWER_DRAIN);
+    }
+};
+
 void AddSC_nekocore_mana_burn_scaling()
 {
     // EFFECT_0 -- 65 spells
@@ -265,4 +289,6 @@ void AddSC_nekocore_mana_burn_scaling()
     RegisterSpellScriptWithArgs(spell_nekocore_mana_burn_scaling_e2, "spell_nekocore_mana_burn_39037");
     RegisterSpellScriptWithArgs(spell_nekocore_mana_burn_scaling_e2, "spell_nekocore_mana_burn_62129");
     RegisterSpellScriptWithArgs(spell_nekocore_mana_burn_scaling_e2, "spell_nekocore_mana_burn_62471");
+    // POWER_DRAIN, EFFECT_0
+    RegisterSpellScriptWithArgs(spell_nekocore_mana_drain_scaling_e0, "spell_nekocore_mana_drain_7485");
 }

@@ -156,3 +156,9 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 (71743, 'spell_nekocore_mana_burn_71743'),
 (72029, 'spell_nekocore_mana_burn_72029'),
 (72030, 'spell_nekocore_mana_burn_72030');
+
+-- Mana drain (SPELL_EFFECT_POWER_DRAIN): spell_nekocore_mana_drain_scaling_e0.
+-- 7485 Butcher Drain, Razorclaw the Butcher (Shadowfang Keep), 350 mana a cast.
+DELETE FROM `spell_script_names` WHERE `ScriptName` = 'spell_nekocore_mana_drain_7485';
+INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
+(7485, 'spell_nekocore_mana_drain_7485');

@@ -35,7 +35,7 @@ const NL_ERA = [
     13 => 'WotLK', 14 => 'WotLK', 15 => 'WotLK', 16 => 'WotLK', 17 => 'WotLK', 18 => 'WotLK',
 ];
 
-/** A kill counts for rankings only if every participant is at most this many levels above the boss. */
+/** A kill counts for rankings only if every participant is at most this many levels above the dungeon's highest boss (nl_dungeon_level). */
 const NL_LEVEL_TOLERANCE = 3;
 
 /** Leaderboard points for holding a rank position, per boss and metric (speed points go to every member of the kill). */
@@ -167,7 +167,7 @@ function nl_boss_pulls(PDO $db, int $bossEntry, int $limit, int $offset = 0): ar
  */
 function nl_refresh_ranks(PDO $db, int $batch = 50): int
 {
-    $todo = $db->query("SELECT e.*, r.map_id, r.started_at FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
+    $todo = $db->query("SELECT e.*, r.map_id, r.spawn_mode, r.started_at FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
                         LEFT JOIN nekolog_rank k ON k.enc_id = e.id
                         WHERE e.result = 1 AND e.end_ms > e.start_ms AND k.enc_id IS NULL
                           AND " . nl_not_challenge($db, 'r.id') . "
@@ -192,7 +192,11 @@ function nl_refresh_ranks(PDO $db, int $batch = 50): int
         $who = array_unique(array_merge(array_keys($participants), array_keys($totals)));
         $dur = max(1, (int)$e['end_ms'] - (int)$e['start_ms']);
         // On-level gate: one over-level member (a carry) disqualifies the whole kill.
-        $bossLevel = (int)($actors[$e['boss_guid']]['level'] ?? 0);
+        // Measured against the dungeon, not this boss alone: Shadowfang Keep opens
+        // with a level-20 boss in a level 22-30 dungeon, so a level-26 player was
+        // "over-level" for the first two bosses of an on-level run.
+        $ownLevel = (int)($actors[$e['boss_guid']]['level'] ?? 0);
+        $bossLevel = $ownLevel > 0 ? max($ownLevel, nl_dungeon_level($db, (int)$e['map_id'], (int)$e['spawn_mode'])) : 0;
         $maxLevel = 0;
         foreach ($who as $g) if (($actors[$g]['kind'] ?? 0) == 1) $maxLevel = max($maxLevel, (int)$actors[$g]['level']);
         $eligible = ($bossLevel > 0 && $maxLevel <= $bossLevel + NL_LEVEL_TOLERANCE) ? 1 : 0;
@@ -286,6 +290,25 @@ function nl_rank_bosses(PDO $db, int $mapId): array
 }
 
 /** Eligibility of one encounter's kill for the log pages: null if not a summarized kill. */
+/**
+ * Highest level any boss of this dungeon and difficulty has been logged at,
+ * outside challenge runs (they raise creature levels). Learned from the logs,
+ * since the world DB has no usable per-dungeon level table.
+ */
+function nl_dungeon_level(PDO $db, int $mapId, int $spawnMode): int
+{
+    static $cache = [];
+    $key = "$mapId:$spawnMode";
+    if (!isset($cache[$key])) {
+        $st = $db->prepare("SELECT MAX(a.level) FROM nekolog_encounter e JOIN nekolog_run r ON r.id = e.run_id
+                            JOIN nekolog_actor a ON a.run_id = e.run_id AND a.guid = e.boss_guid
+                            WHERE r.map_id = :m AND r.spawn_mode = :s AND " . nl_not_challenge($db, 'r.id'));
+        $st->execute(['m' => $mapId, 's' => $spawnMode]);
+        $cache[$key] = (int)$st->fetchColumn();
+    }
+    return $cache[$key];
+}
+
 function nl_kill_eligibility(PDO $db, int $encId): ?array
 {
     $st = $db->prepare("SELECT MAX(eligible) AS eligible, MAX(boss_level) AS boss_level, MAX(max_level) AS max_level FROM nekolog_rank WHERE enc_id = :e");

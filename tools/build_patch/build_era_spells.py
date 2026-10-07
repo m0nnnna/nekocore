@@ -907,9 +907,16 @@ SPELL_DAMAGE_CLASS_MELEE, SPELL_DAMAGE_CLASS_RANGED = 2, 3
 # Coefficients 1.12 set by hand rather than by the rule, keyed by original
 # spell id: (direct, dot, ap_dot). Garrote: "$AP*0.03" per tick, from patch
 # 1.12.0 ("Garrote now increases in potency with greater attack power").
+#
+# Retribution Aura r1-r5: a damage shield, which took no bonus in 1.12. With
+# no row, the core adds the target's "damage taken" bonus at the instant-cast
+# default of 43% (Unit::SpellDamageBonusTaken treats a coefficient <= 0 as
+# "use the default"), so Judgement of the Crusader put ~21 on every reflect.
+# 0.0001 is the smallest row that turns that default off.
 VANILLA_BONUS_OVERRIDES = {
     703: (0.0, 0.0, 0.03), 8631: (0.0, 0.0, 0.03), 8632: (0.0, 0.0, 0.03), 8633: (0.0, 0.0, 0.03),
     11289: (0.0, 0.0, 0.03), 11290: (0.0, 0.0, 0.03),
+    **{s: (0.0001, 0.0, 0.0) for s in (7294, 10298, 10299, 10300, 10301)},
 }
 
 

@@ -432,6 +432,48 @@ class spell_era_pal_seal_of_righteousness : public AuraScript
     }
 };
 
+// The hit spell 25742 the Vanilla seal above casts. The core adds the
+// target's "Holy damage taken" (Judgement of the Crusader) with 25742's own
+// coefficient, and 25742 has no spell_bonus_data, so that is the instant-cast
+// default of 1.5/3.5: JotC rank 3's +50 put ~21 on every swing where 1.12
+// added the seal's 10%. A spell_bonus_data row cannot fix that: the core
+// reads the same row for the caster's spell power as well, which the seal
+// script already adds, and WotLK's Seal of Righteousness casts 25742 too.
+// So this rescales the taken bonus on hits from a Vanilla seal only. OnHit
+// runs before crit, resist and absorb, so they still apply to the result.
+class spell_era_pal_seal_of_righteousness_damage : public SpellScript
+{
+    PrepareSpellScript(spell_era_pal_seal_of_righteousness_damage);
+
+    void HandleHit()
+    {
+        SpellInfo const* seal = GetTriggeringSpell();
+        Unit* caster = GetCaster();
+        Unit* target = GetHitUnit();
+        if (!seal || EraOfSpell(seal->Id) != ERA_VANILLA || !caster || !target || !caster->IsPlayer())
+            return;
+
+        // The taken bonus alone, already multiplied by the target's percent
+        // taken modifiers: (0 + benefit * coeff) * mod.
+        SpellInfo const* spellInfo = GetSpellInfo();
+        int32 const takenBonus = int32(target->SpellDamageBonusTaken(caster, spellInfo, 0, SPELL_DIRECT_DAMAGE));
+        float const defaultCoeff = caster->CalculateDefaultCoefficient(spellInfo, SPELL_DIRECT_DAMAGE);
+        if (takenBonus <= 0 || defaultCoeff <= 0.0f)
+            return;
+
+        Item const* weapon = caster->ToPlayer()->GetWeaponForAttack(BASE_ATTACK, true);
+        float const eraCoeff = weapon && weapon->GetTemplate()->InventoryType == INVTYPE_2HWEAPON ? 0.125f : 0.10f;
+
+        int32 const excess = int32(takenBonus * (1.0f - eraCoeff / defaultCoeff) + 0.5f);
+        SetHitDamage(std::max(0, GetHitDamage() - excess));
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_era_pal_seal_of_righteousness_damage::HandleHit);
+    }
+};
+
 // Divine Shield, Divine Protection, Blessing of Protection (Vanilla): "Once
 // protected, the target cannot be made invulnerable by Divine Shield, Divine
 // Protection or Blessing of Protection again for $25771d." -- the era's own
@@ -480,6 +522,7 @@ class spell_era_pal_immunities : public SpellScript
 void AddSC_era_spell_scripts()
 {
     RegisterSpellScript(spell_era_pal_seal_of_righteousness);
+    RegisterSpellScript(spell_era_pal_seal_of_righteousness_damage);
     RegisterSpellScript(spell_era_pal_immunities);
     RegisterSpellScript(spell_era_dru_furor);
     RegisterSpellScript(spell_era_warl_improved_drain_soul);

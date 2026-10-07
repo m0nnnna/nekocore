@@ -8146,6 +8146,7 @@ INSERT INTO `spell_bonus_data` (`entry`, `direct_bonus`, `dot_bonus`, `ap_bonus`
 (306780, 0.5714, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (306789, 0.2143, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (307001, 0.0, 0.1333, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(307294, 0.0001, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (307322, 0.7057, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (307372, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (307373, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
@@ -8235,9 +8236,9 @@ INSERT INTO `spell_bonus_data` (`entry`, `direct_bonus`, `dot_bonus`, `ap_bonus`
 (309007, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (309472, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (309473, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
-(309474, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
-(309492, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)');
+(309474, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)');
 INSERT INTO `spell_bonus_data` (`entry`, `direct_bonus`, `dot_bonus`, `ap_bonus`, `ap_dot_bonus`, `comments`) VALUES
+(309492, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (309493, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (309750, 0.1654, 0.142, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (309752, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
@@ -8288,6 +8289,10 @@ INSERT INTO `spell_bonus_data` (`entry`, `direct_bonus`, `dot_bonus`, `ap_bonus`
 (310215, 0.264, 0.0256, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (310216, 0.264, 0.0256, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (310230, 0.1934, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(310298, 0.0001, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(310299, 0.0001, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(310300, 0.0001, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(310301, 0.0001, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (310312, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (310313, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (310314, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),

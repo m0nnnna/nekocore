@@ -118,7 +118,7 @@ neko_page_start(['title' => $title, 'active' => $challenge ? 'challenges' : 'log
             <?= e(nl_duration($encDurationMs)) ?> &middot; <?= (int)$enc['players'] ?> player<?= (int)$enc['players'] === 1 ? '' : 's' ?>
             &middot; <?= e(nl_era_name((int)$enc['min_era'])) ?><?= nl_era_name((int)$enc['min_era']) !== nl_era_name((int)$enc['max_era']) ? '&ndash;' . e(nl_era_name((int)$enc['max_era'])) : '' ?> era
             <?php if ($elig && !(int)$elig['eligible']): ?>
-                &middot; <span class="nl-result is-wipe" title="Highest level in the group was <?= (int)$elig['max_level'] ?>; the boss is level <?= (int)$elig['boss_level'] ?> (limit +<?= NL_LEVEL_TOLERANCE ?>)">Over-level &middot; not ranked</span>
+                &middot; <span class="nl-result is-wipe" title="Highest level in the group was <?= (int)$elig['max_level'] ?>; this dungeon's bosses go up to level <?= (int)$elig['boss_level'] ?> (limit +<?= NL_LEVEL_TOLERANCE ?>)">Over-level &middot; not ranked</span>
             <?php elseif ($elig): ?>
                 &middot; <a class="nl-result is-kill" href="rankings.php?<?= http_build_query(['map' => $run['map_id'], 'boss' => $enc['boss_entry']]) ?>">Ranked</a>
             <?php endif; ?>
