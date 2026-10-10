@@ -151,6 +151,9 @@ def build_era_spells(vanilla_root: Path | None, tbc_root: Path | None, wotlk_roo
         cmd += ["--vanilla-root", str(vanilla_root)]
     if tbc_root:
         cmd += ["--tbc-root", str(tbc_root)]
+    npc_spells = GENERATED_DIR / "classic-npc-spells.txt"
+    if npc_spells.exists():
+        cmd += ["--npc-spells", str(npc_spells)]
     print("+ " + " ".join(cmd))
     subprocess.run(cmd, check=True)
 

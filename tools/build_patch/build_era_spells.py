@@ -735,9 +735,16 @@ ERA_WARD_REFLECT_TALENTS = {
 # src/EraSpellScripts.cpp's spell_era_dru_furor does the era's version.
 ERA_HIDDEN_FROM_CORE = {17056, 17058, 17059, 17060, 17061}  # Furor r1-r5
 
+# Illumination r1-r5. spell_pal_illumination reads the mana returned, as a
+# percent of the heal's base cost, from effect 1's value. WotLK stores it
+# there; the era rows keep it in the core's hard-coded 60% and leave the slot
+# at 0, so a clone returned 1% of the cost -- i.e. no mana on a crit.
+ERA_ILLUMINATION = {20210, 20212, 20213, 20214, 20215}
+ILLUMINATION_COST_PCT = 60
+
 
 def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
-    """ERA_WARD_REFLECT_TALENTS and ERA_HIDDEN_FROM_CORE. Returns whether
+    """ERA_WARD_REFLECT_TALENTS, ERA_HIDDEN_FROM_CORE and ERA_ILLUMINATION. Returns whether
     the row was changed."""
     if original_id in ERA_WARD_REFLECT_TALENTS:
         i, ward_mask = ERA_WARD_REFLECT_TALENTS[original_id]
@@ -751,6 +758,9 @@ def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
         return True
     if original_id in ERA_HIDDEN_FROM_CORE:
         row["SpellClassSet"] = SPELLFAMILY_GENERIC
+        return True
+    if original_id in ERA_ILLUMINATION:
+        row["EffectBasePoints_1"] = ILLUMINATION_COST_PCT - 1
         return True
     return False
 
@@ -1109,6 +1119,11 @@ def main() -> int:
                     help="newline-separated spell ids the realm defines serverside (`spell_dbc`), "
                          "dumped by tools/server/dump_reserved_spell_ids.sh. A clone landing on one "
                          "of these fails the build.")
+    ap.add_argument("--npc-spells", type=Path,
+                    default=Path("data/generated/classic-npc-spells.txt"),
+                    help="newline-separated spell ids that are not class spells but need a Vanilla copy "
+                         "because creatures cast them (written by build_classic_mobs.py). Vanilla only: "
+                         "the creatures it concerns are 1.12 creatures.")
     ap.add_argument("--rank-chains", type=Path,
                     default=Path("data/generated/spell-rank-chains.txt"),
                     help="'<first_spell_id> <spell_id>' per line, dumped by "
@@ -1303,6 +1318,11 @@ def main() -> int:
                     wanted |= added
                     print(f"[{label}] +{len(added)} spell(s) pulled in to keep rank chains whole",
                           file=sys.stderr)
+            if era == "1.12.1" and args.npc_spells and args.npc_spells.exists():
+                npc = {int(x) for x in args.npc_spells.read_text().split() if x.strip()} & set(era_by_id)
+                print(f"[{label}] +{len(npc - wanted)} creature-cast spell(s) from {args.npc_spells.name}",
+                      file=sys.stderr)
+                wanted |= npc
             if only is not None:
                 wanted &= only
             print(f"[{label}] {len(wanted)} class spells to consider", file=sys.stderr)
