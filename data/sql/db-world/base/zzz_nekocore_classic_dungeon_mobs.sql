@@ -10,7 +10,7 @@
 --      for spells whose WotLK version has different numbers or timing.
 -- Every statement checks the row's current values, so it is safe to re-run.
 
--- 1. Abilities 1.12.1 never had (106 casts)
+-- 1. Abilities 1.12.1 never had (96 casts)
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 636 AND `id` = 4 AND `action_type` = 11 AND `action_param1` = 14903 AND `event_type` = 0 AND `link` = 0;  -- Defias Blackguard: spell 14903
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 641 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 40505 AND `event_type` = 0 AND `link` = 0;  -- Goblin Woodcarver: spell 40505
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 647 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 40505 AND `event_type` = 0 AND `link` = 0;  -- Captain Greenskin: spell 40505
@@ -21,7 +21,6 @@ DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 1711 AND
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 1711 AND `id` = 3 AND `action_type` = 11 AND `action_param1` = 13730 AND `event_type` = 9 AND `link` = 0;  -- Defias Convict: spell 13730
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 1715 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 6253 AND `event_type` = 9 AND `link` = 0;  -- Defias Insurgent: spell 6253
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 3872 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 15496 AND `event_type` = 0 AND `link` = 0;  -- Deathsworn Captain: spell 15496
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 3886 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 7485 AND `event_type` = 0 AND `link` = 0;  -- Razorclaw the Butcher: spell 7485
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 4294 AND `id` = 3 AND `action_type` = 11 AND `action_param1` = 8364 AND `event_type` = 0 AND `link` = 0;  -- Scarlet Sorcerer: spell 8364
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 4427 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 8400 AND `event_type` = 0 AND `link` = 0;  -- Ward Guardian: spell 8400
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 4435 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 9128 AND `event_type` = 0 AND `link` = 0;  -- Razorfen Warrior: spell 9128
@@ -34,12 +33,9 @@ DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 5714 AND
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 5716 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 40505 AND `event_type` = 9 AND `link` = 0;  -- Zul'Lor: spell 40505
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6206 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 16145 AND `event_type` = 9 AND `link` = 0;  -- Caverndeep Burrower: spell 16145
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6218 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 9459 AND `event_type` = 0 AND `link` = 0;  -- Irradiated Slime: spell 9459
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6219 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 10341 AND `event_type` = 0 AND `link` = 0;  -- Corrosive Lurker: spell 10341
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6219 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 9459 AND `event_type` = 0 AND `link` = 0;  -- Corrosive Lurker: spell 9459
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6220 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 9459 AND `event_type` = 0 AND `link` = 0;  -- Irradiated Horror: spell 9459
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6222 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 12024 AND `event_type` = 0 AND `link` = 0;  -- Leprous Technician: spell 12024
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6226 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 11306 AND `event_type` = 9 AND `link` = 0;  -- Mechano-Flamewalker: spell 11306
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 6234 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 11825 AND `event_type` = 0 AND `link` = 0;  -- Mechanized Guardian: spell 11825
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 7023 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 9906 AND `event_type` = 0 AND `link` = 0;  -- Obsidian Sentinel: spell 9906
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 7246 AND `id` = 5 AND `action_type` = 11 AND `action_param1` = 18396 AND `event_type` = 0 AND `link` = 0;  -- Sandfury Shadowhunter: spell 18396
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 7267 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 15496 AND `event_type` = 0 AND `link` = 0;  -- Chief Ukorz Sandscalp: spell 15496
@@ -56,7 +52,6 @@ DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8899 AND
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8902 AND `id` = 3 AND `action_type` = 11 AND `action_param1` = 15547 AND `event_type` = 9 AND `link` = 0;  -- Shadowforge Citizen: spell 15547
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8902 AND `id` = 4 AND `action_type` = 11 AND `action_param1` = 40505 AND `event_type` = 9 AND `link` = 0;  -- Shadowforge Citizen: spell 40505
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8904 AND `id` = 3 AND `action_type` = 11 AND `action_param1` = 15547 AND `event_type` = 9 AND `link` = 0;  -- Shadowforge Senator: spell 15547
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8909 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 15242 AND `event_type` = 0 AND `link` = 0;  -- Fireguard: spell 15242
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 8920 AND `id` = 4 AND `action_type` = 11 AND `action_param1` = 6660 AND `event_type` = 9 AND `link` = 0;  -- Weapon Technician: spell 6660
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 9016 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 13880 AND `event_type` = 0 AND `link` = 0;  -- Bael'Gar: spell 13880
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 9096 AND `id` = 6 AND `action_type` = 11 AND `action_param1` = 24023 AND `event_type` = 9 AND `link` = 0;  -- Rage Talon Dragonspawn: spell 24023
@@ -91,12 +86,10 @@ DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11455 AN
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11466 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 9053 AND `event_type` = 0 AND `link` = 0;  -- Highborne Summoner: spell 9053
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11466 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 13339 AND `event_type` = 0 AND `link` = 0;  -- Highborne Summoner: spell 13339
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11473 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 17831 AND `event_type` = 9 AND `link` = 0;  -- Eldreth Spectre: spell 17831
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11476 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 13444 AND `event_type` = 9 AND `link` = 0;  -- Skeletal Highborne: spell 13444
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11486 AND `id` = 5 AND `action_type` = 11 AND `action_param1` = 13736 AND `event_type` = 0 AND `link` = 0;  -- Prince Tortheldrin: spell 13736
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11487 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 15587 AND `event_type` = 0 AND `link` = 0;  -- Magister Kalendris: spell 15587
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11487 AND `id` = 4 AND `action_type` = 11 AND `action_param1` = 15654 AND `event_type` = 0 AND `link` = 0;  -- Magister Kalendris: spell 15654
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11488 AND `id` = 3 AND `action_type` = 11 AND `action_param1` = 16100 AND `event_type` = 9 AND `link` = 0;  -- Illyanna Ravenoak: spell 16100
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11517 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 40505 AND `event_type` = 0 AND `link` = 0;  -- Oggleflint: spell 40505
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11519 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 744 AND `event_type` = 9 AND `link` = 0;  -- Bazzalan: spell 744
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11582 AND `id` = 6 AND `action_type` = 11 AND `action_param1` = 17620 AND `event_type` = 0 AND `link` = 0;  -- Scholomance Dark Summoner: spell 17620
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 11790 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 14873 AND `event_type` = 0 AND `link` = 0;  -- Putridus Satyr: spell 14873
@@ -105,9 +98,6 @@ DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12222 AN
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12242 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 14873 AND `event_type` = 0 AND `link` = 0;  -- Spirit of Maraudos: spell 14873
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12243 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 15547 AND `event_type` = 0 AND `link` = 0;  -- Spirit of Veng: spell 15547
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12243 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 14443 AND `event_type` = 0 AND `link` = 0;  -- Spirit of Veng: spell 14443
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12258 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 40504 AND `event_type` = 0 AND `link` = 0;  -- Razorlash: spell 40504
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12258 AND `id` = 1 AND `action_type` = 11 AND `action_param1` = 15976 AND `event_type` = 0 AND `link` = 0;  -- Razorlash: spell 15976
-DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 12258 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 3391 AND `event_type` = 0 AND `link` = 0;  -- Razorlash: spell 3391
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 13596 AND `id` = 0 AND `action_type` = 11 AND `action_param1` = 15976 AND `event_type` = 9 AND `link` = 0;  -- Rotgrip: spell 15976
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 14324 AND `id` = 2 AND `action_type` = 11 AND `action_param1` = 12466 AND `event_type` = 0 AND `link` = 0;  -- Cho'Rush the Observer: spell 12466
 DELETE FROM `smart_scripts` WHERE `source_type` = 0 AND `entryorguid` = 14324 AND `id` = 6 AND `action_type` = 11 AND `action_param1` = 15587 AND `event_type` = 0 AND `link` = 0;  -- Cho'Rush the Observer: spell 15587

@@ -226,6 +226,10 @@ def main() -> int:
     wspell = {r["ID"]: r for r in read_dbc(args.spell_dbc, BUILD_SCHEMAS["3.3.5a"]["Spell.dbc"],
                                           LOCALE_COUNT["3.3.5a"]).rows}
     has_vanilla_copy = {int(k) for k in json.loads(args.era_spell_map.read_text())["id_map"]["Vanilla"]}
+    # The map also lists the copies this tool asked for last time. Those are not
+    # class spells, and counting them as such would drop them from the list on a re-run.
+    if args.out_spells.exists():
+        has_vanilla_copy -= {int(x) for x in args.out_spells.read_text().split()}
 
     # --- which creatures are in scope -----------------------------------
     def in_scope(entry: int) -> bool:
@@ -267,6 +271,15 @@ def main() -> int:
                 cmin, cmax = next(iter(reps))
                 if (cmin >= MIN_CLASSIC_COOLDOWN and 0 < r["event_param3"] < TIMER_TOLERANCE * cmin):
                     retimed.append((r, (cmin, cmax)))
+
+    # A creature whose every SmartAI row would go is one 1.12.1's data does not
+    # describe (its behaviour is in C++ there, or a later fix added it here --
+    # Razorclaw's Butcher Drain), and SmartAI refuses to load with no rows.
+    remaining = collections.Counter(r["entryorguid"] for r in rows)
+    for r in deletes:
+        remaining[r["entryorguid"]] -= 1
+    emptied = {e for e, n in remaining.items() if n <= 0}
+    deletes = [r for r in deletes if r["entryorguid"] not in emptied]
 
     # --- which of the remaining spells need a 1.12 copy -----------------
     repoint: dict[int, str] = {}      # spell -> why
