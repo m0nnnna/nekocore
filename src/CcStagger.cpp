@@ -47,13 +47,39 @@ namespace
     std::mutex lock;
     std::unordered_map<uint64, LastCc> lastCc; // (map id, instance id) -> most recent CC cast
 
+    bool IsCrowdControlMechanic(uint32 mechanic)
+    {
+        switch (mechanic)
+        {
+            case MECHANIC_CHARM: case MECHANIC_DISORIENTED: case MECHANIC_DISARM: case MECHANIC_FEAR:
+            case MECHANIC_SLEEP: case MECHANIC_SILENCE: case MECHANIC_ROOT: case MECHANIC_STUN:
+            case MECHANIC_FREEZE: case MECHANIC_KNOCKOUT: case MECHANIC_POLYMORPH: case MECHANIC_HORROR:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     bool IsCrowdControl(SpellInfo const* info)
     {
-        return info->HasAura(SPELL_AURA_MOD_CHARM) || info->HasAura(SPELL_AURA_MOD_CONFUSE) ||
-               info->HasAura(SPELL_AURA_MOD_DISARM) || info->HasAura(SPELL_AURA_MOD_FEAR) ||
-               info->HasAura(SPELL_AURA_MOD_PACIFY) || info->HasAura(SPELL_AURA_MOD_POSSESS) ||
-               info->HasAura(SPELL_AURA_MOD_SILENCE) || info->HasAura(SPELL_AURA_MOD_STUN) ||
-               info->HasAura(SPELL_AURA_MOD_ROOT) || info->HasAura(SPELL_AURA_MOD_SPEED_SLOW_ALL);
+        // By aura first (the list AutoBalance uses, plus root)...
+        if (info->HasAura(SPELL_AURA_MOD_CHARM) || info->HasAura(SPELL_AURA_MOD_CONFUSE) ||
+            info->HasAura(SPELL_AURA_MOD_DISARM) || info->HasAura(SPELL_AURA_MOD_FEAR) ||
+            info->HasAura(SPELL_AURA_MOD_PACIFY) || info->HasAura(SPELL_AURA_MOD_POSSESS) ||
+            info->HasAura(SPELL_AURA_MOD_SILENCE) || info->HasAura(SPELL_AURA_MOD_STUN) ||
+            info->HasAura(SPELL_AURA_MOD_ROOT) || info->HasAura(SPELL_AURA_MOD_SPEED_SLOW_ALL))
+            return true;
+
+        // ...then by mechanic. Screams of the Past (the Shadowfang Keep guards'
+        // chain silence) is a persistent area aura whose silence is only its
+        // MECHANIC, so no aura check sees it. AutoBalance's CCDuration does not
+        // either; the stagger is what covers it.
+        if (IsCrowdControlMechanic(info->Mechanic))
+            return true;
+        for (SpellEffectInfo const& effect : info->GetEffects())
+            if (effect.IsEffect() && IsCrowdControlMechanic(effect.Mechanic))
+                return true;
+        return false;
     }
 }
 
