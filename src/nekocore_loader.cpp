@@ -20,6 +20,7 @@ void AddSC_nekolog();
 void AddSC_nekocore_challenge_run();
 void AddSC_nekocore_challenge_scaling();
 void AddSC_nekocore_patch_check();
+void AddSC_cc_stagger();
 
 void AddnekocoreScripts()
 {
@@ -38,4 +39,5 @@ void AddnekocoreScripts()
     AddSC_nekocore_challenge_run();
     AddSC_nekocore_challenge_scaling();
     AddSC_nekocore_patch_check();
+    AddSC_cc_stagger();
 }

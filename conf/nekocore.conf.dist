@@ -271,3 +271,33 @@ Nekocore.Challenge.Announce = 1
 #        Default:     "/azerothcore/nekocore/patch-version.txt"
 #
 Nekocore.PatchVersionFile = "/azerothcore/nekocore/patch-version.txt"
+
+# Nekocore.CcStagger.Ms
+#
+#        Description: In a five-man dungeon, once one mob starts a crowd control spell (stun,
+#                      silence, fear, root, slow, ...), no other mob of that instance may start one
+#                      for this long. The window shrinks with party size and is zero at a full
+#                      group (Nekocore.CcStagger.FullGroup), so five players play unchanged and one
+#                      player gets the whole value. A blocked cast is just skipped. 0 turns it off.
+#                      Pairs with AutoBalance.StatModifier*.CCDuration, which shortens each CC.
+#                      See src/CcStagger.cpp.
+#
+#        Default:     3000
+#
+Nekocore.CcStagger.Ms = 3000
+
+# Nekocore.CcStagger.FullGroup
+#
+#        Description: Party size at which the stagger window reaches zero.
+#
+#        Default:     5
+#
+Nekocore.CcStagger.FullGroup = 5
+
+# Nekocore.CcStagger.Bosses
+#
+#        Description: Also stagger dungeon bosses. Off by default: their CC is part of the fight.
+#
+#        Default:     0
+#
+Nekocore.CcStagger.Bosses = 0
