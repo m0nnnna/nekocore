@@ -170,7 +170,8 @@ public:
             return spellEra == playerEra;
         }
 
-        if (playerEra != ERA_WOTLK && IsWotlkOnlyProfessionPerk(spellId))
+        if (playerEra != ERA_WOTLK
+            && (IsWotlkOnlyProfessionPerk(spellId) || IsRacialAddedAfterEra(player, playerEra, spellId)))
             return false;
 
         if (inSubstitution || playerEra == ERA_WOTLK || IsTalentRankSpell(spellId))

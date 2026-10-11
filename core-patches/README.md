@@ -31,3 +31,9 @@ can't be done from a module hook. Apply from the AzerothCore root with
   scales by `(SpellLevel + 6) / level` (a 2.0 downranking penalty) and skips
   spells whose MaxLevel is not above their level. It pairs with the 1.12
   coefficients `build_era_spells.py` derives for Vanilla copies.
+- `0005-era-consumables.patch` -- two consumable rules the core hardcodes
+  at 3.x: Battle/Guardian elixir exclusivity (`Aura::CanStackWith`, added in
+  2.1) and the potion lockout until combat ends (`Spell::SendSpellCooldown`).
+  Both now ask `g_nekoUnitIsVanilla` (installed by `src/EraConsumables.cpp`)
+  and a Vanilla-era player gets 1.12's rules: elixirs and flasks coexist, and
+  a potion starts its item cooldown on use. TBC and WotLK are unchanged.

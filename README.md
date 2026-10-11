@@ -1299,7 +1299,10 @@ tables), `data/sql/db-world/base/challenge_keeper.sql` (the NPC),
 `Nekocore.Challenge.*` block in `conf/nekocore.conf.dist`.
 
 **How it plays.** The **Challenge Keeper** (entry 9000101) stands beside
-Dungeon Dan in Stormwind and Orgrimmar and lists the dungeons your
+Dungeon Dan in Stormwind and Orgrimmar, and also in front of every dungeon
+and raid entrance (`tools/build_patch/build_keeper_spawns.py` generates
+`challenge_keeper_spawns.sql` from the entrance triggers). Dan himself is in
+every capital. The Keeper lists the dungeons your
 character may challenge, each with the tier it is at *for you* and what
 that works out to. Picking one arms it; walking into the instance starts
 it. Killing the dungeon's final boss is +1 tier for everyone in the run;
@@ -1309,7 +1312,7 @@ damage` per step by default -- health climbing faster than damage on
 purpose, so a tier is a longer fight before it is a lethal one. There is no
 ceiling unless you set one; the wall is wherever a group actually stops.
 
-Arming deliberately does **not** teleport. Dungeon Dan is three yards away
+Arming deliberately does **not** teleport. Dungeon Dan is in every capital
 and already has every dungeon entrance; a second copy of his coordinate
 table would be a second thing to keep right.
 

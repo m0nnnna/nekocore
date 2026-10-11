@@ -38,3 +38,17 @@ INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `p
 (5300719, 629100, 530, 0, 0, 1, 1, 0, 9469.52, -7291.46, 14.31, 0.105, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Silvermoon, next to Gabriella'),
 (5300720, 629100, 530, 0, 0, 1, 1, 0, -1815.28, 5423.08, -12.43, 2.875, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Shattrath, next to Gabriella'),
 (5300721, 629100, 571, 0, 0, 1, 1, 0, 5788.78, 559.80, 650.66, 1.793, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore XP Guide: Dalaran, next to Gabriella');
+
+-- Dungeon Dan (mod-dungeonmaster, 197762) in the two capitals that lacked
+-- him (every capital has one now), three yards past the XP Guide in the same
+-- row as Gabriella.
+DELETE FROM `creature` WHERE `guid` BETWEEN 5300724 AND 5300731;
+INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`, `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
+(5300724, 197762, 0, 0, 0, 1, 1, 0, -4950.92, -932.00, 501.66, 4.775, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Ironforge'),
+(5300725, 197762, 1, 0, 0, 1, 1, 0, 9935.69, 2508.00, 1318.17, 4.787, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Darnassus'),
+(5300726, 197762, 0, 0, 0, 1, 1, 0, 1588.54, 278.14, -55.34, 0.361, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Undercity'),
+(5300727, 197762, 1, 0, 0, 1, 1, 0, -1289.24, 122.17, 131.18, 5.784, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Thunder Bluff'),
+(5300728, 197762, 530, 0, 0, 1, 1, 0, -3954.17, -11675.94, -138.76, 3.291, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Exodar'),
+(5300729, 197762, 530, 0, 0, 1, 1, 0, 9469.21, -7288.48, 14.31, 0.105, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Silvermoon'),
+(5300730, 197762, 530, 0, 0, 1, 1, 0, -1816.07, 5420.19, -12.43, 2.875, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Shattrath'),
+(5300731, 197762, 571, 0, 0, 1, 1, 0, 5785.85, 559.14, 650.66, 1.793, 300, 0, 0, 1, 0, 0, 0, 0, 0, '', 0, 0, 'nekocore service row: Dungeon Dan, Dalaran');

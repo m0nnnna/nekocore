@@ -16,6 +16,7 @@
 #include "Define.h"
 #include "DBCStores.h"
 #include "Player.h"
+#include "SpellMgr.h"
 
 #include "EraTalents.h"
 
@@ -101,6 +102,50 @@ namespace NekoEraSpells
             default:
                 return false;
         }
+    }
+
+    /// The racial skill lines (Dwarven, Tauren, Orcish, Night Elf, Troll,
+    /// Undead, Gnomish, Human, Blood Elf, Draenei). Must match
+    /// build_era_spells.py's RACIAL_SKILL_LINES, which is what gives every
+    /// racial an era copy.
+    constexpr uint32 RACIAL_SKILL_LINES[] = { 101, 124, 125, 126, 220, 733, 753, 754, 756, 760 };
+
+    inline bool IsRacialSpell(uint32 spellId)
+    {
+        SkillLineAbilityMapBounds const bounds = sSpellMgr->GetSkillLineAbilityMapBounds(spellId);
+        for (auto it = bounds.first; it != bounds.second; ++it)
+            for (uint32 line : RACIAL_SKILL_LINES)
+                if (it->second->SkillLine == line)
+                    return true;
+        return false;
+    }
+
+    /// Race bits the era's client had: Blood Elf and Draenei came with TBC.
+    inline uint32 EraRaceMask(Era era)
+    {
+        switch (era)
+        {
+            case ERA_VANILLA: return 0x0FF;
+            case ERA_TBC:     return 0x6FF;
+            default:          return 0;
+        }
+    }
+
+    /// A racial WotLK added (Every Man for Himself, the per-class Gift of the
+    /// Naaru, the Death Knight Blood Fury): the era has no copy of it, so it
+    /// must not be kept. Every racial the era DID have is cloned by
+    /// build_era_spells.py, so "racial with no era copy" is exactly this set.
+    ///
+    /// Not applied to a race the era did not have (a Blood Elf in Vanilla):
+    /// their racials exist in no copy of that era, and dropping the WotLK
+    /// ones would leave them with nothing.
+    inline bool IsRacialAddedAfterEra(Player const* player, Era era, uint32 spellId)
+    {
+        if (era == ERA_WOTLK || spellId >= ERA_SPELL_MIN)
+            return false;
+        if (!(player->getRaceMask() & EraRaceMask(era)))
+            return false;
+        return IsRacialSpell(spellId) && !EraSpellFor(era, spellId);
     }
 
     /// Skill lines whose rewarded spells include those perks.

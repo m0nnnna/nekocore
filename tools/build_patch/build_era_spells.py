@@ -1000,8 +1000,17 @@ def vanilla_coefficients(row: dict, cast_ms: int, duration_ms: int) -> tuple[flo
     return (round(direct_coeff, 4), round(dot_coeff, 4))
 
 
+# The racial skill lines: Dwarven 101, Tauren 124, Orcish 125, Night Elf 126,
+# Troll 220, Undead 733, Gnomish 753, Human 754, Blood Elf 756, Draenei 760.
+# Their spells are per-era too (Human Spirit 5% vs 3%, Blood Fury, the weapon
+# specialisations, Escape Artist, Berserking...), and the gate and login sync
+# in src/ move them like any class spell. Mirrored by RACIAL_SKILL_LINES in
+# src/EraSpells.h, which also drops the racials WotLK added.
+RACIAL_SKILL_LINES = {101, 124, 125, 126, 220, 733, 753, 754, 756, 760}
+
+
 def class_spell_ids(sla: DbcFile, class_lines: set[int]) -> set[int]:
-    """Spells a player character of some class can know.
+    """Spells a player character of some class or race can know.
 
     Two tests, unioned, because neither alone is enough:
 
@@ -1015,9 +1024,13 @@ def class_spell_ids(sla: DbcFile, class_lines: set[int]) -> set[int]:
     all sit in class skill lines with ClassMask 0 -- and skipping the
     middle rank of a chain leaves the rest of that chain broken. Widening
     to the union takes Vanilla from 1,936 spells to 3,328.
+
+    Racial skill lines count too (RACIAL_SKILL_LINES), so racials follow the
+    same per-era design.
     """
     return {row["Spell"] for row in sla.rows
-            if row["ClassMask"] != 0 or row["SkillLine"] in class_lines}
+            if row["ClassMask"] != 0 or row["SkillLine"] in class_lines
+            or row["SkillLine"] in RACIAL_SKILL_LINES}
 
 
 def build_clone(

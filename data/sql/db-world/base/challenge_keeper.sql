@@ -35,7 +35,7 @@ INSERT INTO `npc_text` (`ID`, `text0_0`) VALUES
     (9000101, 'Outgrown a place, have you? Bring it back up to your level, then.$B$BI can set a dungeon''s inhabitants to fight you as equals -- no easier for being old. Clear one and I will have them ready for you, harder, the next time you come asking. Fail, and they will remember that too.$B$BPick your ground.');
 
 -- Beside Dungeon Dan in both capitals, continuing the service row that
--- service_npcs.sql lays out (guids 5300700-5300721 are that file's).
+-- service_npcs.sql lays out (guids 5300700-5300725 are that file's, bar 5300722-3).
 DELETE FROM `creature` WHERE `guid` BETWEEN 5300722 AND 5300723;
 INSERT INTO `creature` (`guid`, `id`, `map`, `zoneId`, `areaId`, `spawnMask`, `phaseMask`, `equipment_id`, `position_x`, `position_y`, `position_z`, `orientation`, `spawntimesecs`, `wander_distance`, `currentwaypoint`, `curhealth`, `curmana`, `MovementType`, `npcflag`, `unit_flags`, `dynamicflags`, `ScriptName`, `VerifiedBuild`, `CreateObject`, `Comment`) VALUES
 -- Stormwind, Trade District

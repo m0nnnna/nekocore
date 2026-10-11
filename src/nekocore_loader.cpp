@@ -21,6 +21,7 @@ void AddSC_nekocore_challenge_run();
 void AddSC_nekocore_challenge_scaling();
 void AddSC_nekocore_patch_check();
 void AddSC_cc_stagger();
+void AddSC_era_consumables();
 
 void AddnekocoreScripts()
 {
@@ -40,4 +41,5 @@ void AddnekocoreScripts()
     AddSC_nekocore_challenge_scaling();
     AddSC_nekocore_patch_check();
     AddSC_cc_stagger();
+    AddSC_era_consumables();
 }

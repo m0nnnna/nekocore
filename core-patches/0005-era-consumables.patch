@@ -1,0 +1,72 @@
+diff --git a/src/server/game/Spells/Auras/SpellAuras.cpp b/src/server/game/Spells/Auras/SpellAuras.cpp
+index 3f2609a4b..77a5c4926 100644
+--- a/src/server/game/Spells/Auras/SpellAuras.cpp
++++ b/src/server/game/Spells/Auras/SpellAuras.cpp
+@@ -2071,7 +2071,18 @@ bool Aura::CanStackWith(Aura const* existingAura) const
+         return false;
+ 
+     // check spell group stack rules
+-    switch (sSpellMgr->CheckSpellGroupStackRules(m_spellInfo, existingSpellInfo))
++    SpellGroupStackRule groupRule = sSpellMgr->CheckSpellGroupStackRules(m_spellInfo, existingSpellInfo);
++    // nekocore: 1.12 had no Battle/Guardian elixir split (2.1 added it), so a
++    // Vanilla-era player's elixirs and flasks only stack by their own effects.
++    if (groupRule == SPELL_GROUP_STACK_RULE_EXCLUSIVE && g_nekoUnitIsVanilla && g_nekoUnitIsVanilla(GetUnitOwner()))
++    {
++        uint32 const first = m_spellInfo->GetFirstRankSpell()->Id;
++        uint32 const other = existingSpellInfo->GetFirstRankSpell()->Id;
++        for (SpellGroup group : { SPELL_GROUP_ELIXIR_BATTLE, SPELL_GROUP_ELIXIR_GUARDIAN })
++            if (sSpellMgr->IsSpellMemberOfSpellGroup(first, group) && sSpellMgr->IsSpellMemberOfSpellGroup(other, group))
++                groupRule = SPELL_GROUP_STACK_RULE_DEFAULT;
++    }
++    switch (groupRule)
+     {
+         case SPELL_GROUP_STACK_RULE_EXCLUSIVE:
+         case SPELL_GROUP_STACK_RULE_EXCLUSIVE_HIGHEST: // if it reaches this point, existing aura is lower/equal
+diff --git a/src/server/game/Spells/Spell.cpp b/src/server/game/Spells/Spell.cpp
+index dc6e9179f..636ff9142 100644
+--- a/src/server/game/Spells/Spell.cpp
++++ b/src/server/game/Spells/Spell.cpp
+@@ -4504,7 +4504,11 @@ void Spell::SendSpellCooldown()
+     Player* _player = unitCaster->ToPlayer();
+ 
+     // mana/health/etc potions, disabled by client (until combat out as declarate)
+-    if (m_CastItem && (m_CastItem->IsPotion() || m_spellInfo->IsCooldownStartedOnEvent()))
++    // nekocore: a Vanilla-era player's potion is on a plain timer (cooldown
++    // from use, in or out of combat); the until-combat-ends lockout is 2.x+.
++    bool const potionLocksUntilCombatEnds = m_CastItem && m_CastItem->IsPotion()
++        && !(g_nekoUnitIsVanilla && g_nekoUnitIsVanilla(_player));
++    if (m_CastItem && (potionLocksUntilCombatEnds || m_spellInfo->IsCooldownStartedOnEvent()))
+     {
+         // need in some way provided data for Spell::finish SendCooldownEvent
+         _player->SetLastPotionId(m_CastItem->GetEntry());
+diff --git a/src/server/game/Spells/SpellMgr.cpp b/src/server/game/Spells/SpellMgr.cpp
+index 93d57e3cc..75db5c822 100644
+--- a/src/server/game/Spells/SpellMgr.cpp
++++ b/src/server/game/Spells/SpellMgr.cpp
+@@ -808,6 +808,8 @@ bool SpellMgr::AddSameEffectStackRuleSpellGroups(SpellInfo const* spellInfo, uin
+     return false;
+ }
+ 
++bool (*g_nekoUnitIsVanilla)(Unit const* unit) = nullptr;
++
+ SpellGroupStackRule SpellMgr::CheckSpellGroupStackRules(SpellInfo const* spellInfo1, SpellInfo const* spellInfo2) const
+ {
+     ASSERT(spellInfo1);
+diff --git a/src/server/game/Spells/SpellMgr.h b/src/server/game/Spells/SpellMgr.h
+index b5cc6a338..2f7340499 100644
+--- a/src/server/game/Spells/SpellMgr.h
++++ b/src/server/game/Spells/SpellMgr.h
+@@ -367,6 +367,13 @@ enum SpellGroupStackRule
+     SPELL_GROUP_STACK_RULE_MAX
+ };
+ 
++// nekocore: installed by the nekocore module. True when `unit` is a player in
++// the Vanilla era, whose consumables follow 1.12's rules rather than 2.1+/3.x's
++// (no Battle/Guardian elixir exclusivity, potion cooldown a plain timer).
++// Null when the module is not loaded, which leaves stock behaviour.
++class Unit;
++extern bool (*g_nekoUnitIsVanilla)(Unit const* unit);
++
+ typedef std::unordered_map<SpellGroup, SpellGroupStackRule> SpellGroupStackMap;
+ 
+ typedef std::unordered_map<SpellGroup, std::unordered_set<uint32 /*auraName*/>> SameEffectStackMap;

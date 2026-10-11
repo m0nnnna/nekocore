@@ -96,7 +96,9 @@ namespace NekoEraSpells
                 // move to, so drop them; the core re-adds them at login on
                 // the !IsInWorld skill-load path, which is why this has to
                 // run every login rather than once.
-                if (IsWotlkOnlyProfessionPerk(spellId))
+                // Racials WotLK added (Every Man for Himself, ...) go the
+                // same way, and are re-added by the same login paths.
+                if (IsWotlkOnlyProfessionPerk(spellId) || IsRacialAddedAfterEra(player, targetEra, spellId))
                 {
                     moves[spellId] = 0;
                     continue;
