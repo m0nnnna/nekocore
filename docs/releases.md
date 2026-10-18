@@ -150,6 +150,20 @@ The first update moves this box's settings into `server/.env` and
 - the TOTP secret becomes `NEKOCORE_TOTP_SECRET`
 
 It also switches the containers to the ghcr.io images.
+
+The images built on Windows applied some module SQL (mod-uac, mod-assistant,
+mod-dungeonmaster and some of nekocore's) with CRLF line endings, and GitHub
+builds the same files with LF. AzerothCore's updater would see them as changed
+and re-run them, and one can't run twice. `update` (and `restore`) first mark
+those as already applied: `tools/server/line-endings-rehash.tsv` lists each
+file's exact old and new hash. The dev box's own database needs the same fix
+once (`bin/nekocore rehash` with the dev realm's database running).
+
+Rehearsed on the 2026-10-11 backups with the GitHub-built db-import:
+
+- accounts and characters were unchanged, byte for byte
+- only module SQL that was new or had really changed was applied
+- a second run applied nothing
 `nekocore rollback` goes back to the drop's images (still loaded) if you need
 to.
 

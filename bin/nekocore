@@ -22,6 +22,8 @@
 #   nekocore logs [service]         follow a container's log (default worldserver)
 #   nekocore restart [service]      restart the realm (asks if players are on)
 #   nekocore install                first-time setup of a new box
+#   nekocore rehash                 mark the CRLF-era module SQL as applied
+#                                   (update/restore do it; for a dev box's DB)
 #
 # Dev box (inside a nekocore git checkout, needs gh):
 #   nekocore build                  prepare server/ and build the images (:local)
@@ -86,6 +88,23 @@ need_box() {
     have docker || die "docker not installed"
     docker compose version >/dev/null 2>&1 || die "docker compose v2 missing (Alpine: apk add docker-cli-compose)"
     [ -n "$(db_pw)" ] || die "DOCKER_DB_ROOT_PASSWORD missing from $S/.env"
+}
+
+# The images built on Windows applied some module SQL with CRLF line endings;
+# GitHub builds the same files with LF. AzerothCore's updater keys on a hash of
+# the bytes and would re-run each one as "changed" (some can't run twice).
+# Where `updates` still holds the exact old hash, store the LF one instead; a
+# file whose content really changed has another hash and still re-runs.
+rehash_line_endings() {
+    t="$SELF_DIR/../tools/server/line-endings-rehash.tsv"
+    [ -f "$t" ] || return 0
+    sql=$(awk -F'\t' '!/^#/ && $1 ~ /^[A-Za-z0-9_.-]+$/ && $2 ~ /^[0-9A-F]+$/ && $3 ~ /^[0-9A-F]+$/ {
+        n = split("acore_auth acore_characters acore_world", db, " ")
+        for (i = 1; i <= n; i++)
+            printf "UPDATE `%s`.`updates` SET `hash`=\"%s\" WHERE `name`=\"%s\" AND `hash`=\"%s\";\n", db[i], $3, $1, $2
+    }' "$t")
+    [ -n "$sql" ] || return 0
+    mysql_q "$sql" >/dev/null || warn "couldn't rehash the CRLF-era module SQL entries; ac-db-import may re-run them"
 }
 
 players_online() { mysql_q "SELECT COUNT(*) FROM acore_characters.characters WHERE online=1" || echo 0; }
@@ -218,6 +237,7 @@ cmd_restore() {
     sh "$H/tools/server/backup_db.sh" "$db" "$S" "$H/backups" "$BACKUP_KEEP"
     compose stop ac-worldserver ac-authserver neko-website
     restore_db "$db" "$f"
+    rehash_line_endings
     [ "$db" = acore_auth ] && sh "$H/tools/server/apply_realmlist.sh" "$S" >/dev/null
     compose up -d
     say "restored $db"
@@ -440,6 +460,7 @@ cmd_update() {
         restore_db acore_world "$W/acore_world.sql.gz"
         cut -d' ' -f1 "$W/acore_world.sql.gz.sha256" > "$H/.world-sha256"
     fi
+    rehash_line_endings
     say "module SQL (ac-db-import)"
     if ! compose up --exit-code-from ac-db-import ac-db-import; then
         warn "ac-db-import failed: rolling back the files (databases: nekocore restore latest <db>)"
@@ -614,6 +635,7 @@ case "$cmd" in
     logs) cmd_logs "$@" ;;
     restart) set -- $(printf '%s\n' "$@" | grep -vE '^(--yes|-y)$'); cmd_restart "$@" ;;
     players) cmd_players ;;
+    rehash) need_box; wait_for_mysql; rehash_line_endings; echo "done" ;;
     install) cmd_install ;;
     build) cmd_build ;;
     publish) cmd_publish "$@" ;;
