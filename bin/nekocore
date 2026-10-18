@@ -551,7 +551,8 @@ cmd_build() {
 ensure_data_repo() {
     gh repo view "$DATA_SLUG" >/dev/null 2>&1 && return 0
     say "creating the private data repository $DATA_SLUG"
-    gh repo create "$DATA_SLUG" --private --description "NekoCore game data releases (private: built from the game client)" >/dev/null
+    # --add-readme: a release needs a commit to tag, and a new repo has none.
+    gh repo create "$DATA_SLUG" --private --add-readme --description "NekoCore game data releases (private: built from the game client)" >/dev/null
 }
 
 upload_data() { # tag outdir prerelease(0/1)
