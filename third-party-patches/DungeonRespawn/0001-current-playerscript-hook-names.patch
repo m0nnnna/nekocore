@@ -1,0 +1,59 @@
+diff --git a/src/DungeonRespawn.cpp b/src/DungeonRespawn.cpp
+index 97bab9f..58e029c 100644
+--- a/src/DungeonRespawn.cpp
++++ b/src/DungeonRespawn.cpp
+@@ -41,7 +41,7 @@ void DSPlayerScript::ResurrectPlayer(Player* player)
+     player->SpawnCorpseBones();
+ }
+ 
+-bool DSPlayerScript::OnBeforeTeleport(Player* player, uint32 mapid, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/)
++bool DSPlayerScript::OnPlayerBeforeTeleport(Player* player, uint32 mapid, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/)
+ {
+     if (!drEnabled)
+     {
+@@ -207,7 +207,7 @@ PlayerRespawnData* DSPlayerScript::GetOrCreateRespawnData(Player* player)
+     return GetOrCreateRespawnData(player);
+ }
+ 
+-void DSPlayerScript::OnMapChanged(Player* player)
++void DSPlayerScript::OnPlayerMapChanged(Player* player)
+ {
+     if (!player)
+     {
+@@ -261,7 +261,7 @@ void DSPlayerScript::CreateRespawnData(Player* player)
+     respawnData.push_back(newPrData);
+ }
+ 
+-void DSPlayerScript::OnLogin(Player* player)
++void DSPlayerScript::OnPlayerLogin(Player* player)
+ {
+     if (!player)
+     {
+@@ -271,7 +271,7 @@ void DSPlayerScript::OnLogin(Player* player)
+     GetOrCreateRespawnData(player);
+ }
+ 
+-void DSPlayerScript::OnLogout(Player* player)
++void DSPlayerScript::OnPlayerLogout(Player* player)
+ {
+     if (!player)
+     {
+diff --git a/src/DungeonRespawn.h b/src/DungeonRespawn.h
+index 9597675..8f36767 100644
+--- a/src/DungeonRespawn.h
++++ b/src/DungeonRespawn.h
+@@ -42,10 +42,10 @@ private:
+     PlayerRespawnData* GetOrCreateRespawnData(Player* /*player*/);
+     void CreateRespawnData(Player* /*player*/);
+     void OnPlayerReleasedGhost(Player* /*player*/) override;
+-    bool OnBeforeTeleport(Player* /*player*/, uint32 /*mapid*/, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/) override;
+-    void OnMapChanged(Player* /*player*/) override;
+-    void OnLogin(Player* /*player*/) override;
+-    void OnLogout(Player* /*player*/) override;
++    bool OnPlayerBeforeTeleport(Player* /*player*/, uint32 /*mapid*/, float /*x*/, float /*y*/, float /*z*/, float /*orientation*/, uint32 /*options*/, Unit* /*target*/) override;
++    void OnPlayerMapChanged(Player* /*player*/) override;
++    void OnPlayerLogin(Player* /*player*/) override;
++    void OnPlayerLogout(Player* /*player*/) override;
+ };
+ 
+ class DSWorldScript : public WorldScript

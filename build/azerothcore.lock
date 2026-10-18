@@ -1,0 +1,6 @@
+# The AzerothCore commit nekocore builds on (tools/build/prepare-server.sh).
+# core-patches/*.patch apply on top of it, in filename order. To move to a
+# newer core: change AC_COMMIT, run prepare-server.sh, fix any patch that no
+# longer applies, rebuild and test.
+AC_REPO=https://github.com/azerothcore/azerothcore-wotlk.git
+AC_COMMIT=f68a9759bdd11e773876c6bc12fd0c74866422c2

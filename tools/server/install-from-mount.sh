@@ -16,7 +16,7 @@
 #   2. `docker load`s the prebuilt images straight from the mount.
 #   3. Starts ac-database only, restores the three DB dumps (a mirror of the
 #      dev/current production database), then applies the realm connection
-#      row (wow1.nekos.farm / 192.168.1.8).
+#      row (REALM_* in server/.env).
 #   4. Brings the whole stack up (db-import runs its pending updates, then
 #      auth, world, and the website on port 8088).
 #

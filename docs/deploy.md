@@ -17,17 +17,17 @@
 ## Topology (as verified 2026-09-18, single-box era)
 
 ```
-players ──> 108.174.48.199 (Ubuntu VPS, nginx + VPN proxy)
+players ──> <VPS-IP> (Ubuntu VPS, nginx + VPN proxy)
               ├─ 3724  ──> this box  ac-authserver     (forwarded, open)
               ├─ 8085  ──> this box  ac-worldserver    (forwarded, open)
               ├─ 80/443 nginx: wow.nekos.farm currently 404s here
               └─ 8088  NOT forwarded (neko-website unreachable from outside)
 
-LAN  ──> 192.168.1.8  = this box seen through the VPN (MySQL 3306 reachable;
+LAN  ──> <REALM-LAN-IP>  = this box seen through the VPN (MySQL 3306 reachable;
                         3724/8085 NOT reachable from this box itself -- test
                         from a real LAN client after go-live)
-         192.168.1.7  = mail relay; wow.nekos.farm resolves here internally
-         192.168.0.10 = this box's own LAN address (dev realmlist row)
+         <MAIL-RELAY-IP>  = mail relay; wow.nekos.farm resolves here internally
+         <DEV-LAN-IP> = this box's own LAN address (dev realmlist row)
 ```
 
 ## The one deliberate difference between dev and prod
@@ -36,8 +36,8 @@ LAN  ──> 192.168.1.8  = this box seen through the VPN (MySQL 3306 reachable;
 
 | | name | address | localAddress | mask |
 |---|---|---|---|---|
-| dev | AzerothCore | 192.168.0.10 | 127.0.0.1 | 255.255.255.0 |
-| **prod** | NekoCore | 108.174.48.199 | 192.168.1.8 | 255.0.0.0 |
+| dev | AzerothCore | <DEV-LAN-IP> | 127.0.0.1 | 255.255.255.0 |
+| **prod** | NekoCore | <VPS-IP> | <REALM-LAN-IP> | 255.0.0.0 |
 
 The prod address is the VPS proxy's **IP**, not `wow1.nekos.farm`: the authserver
 resolves `address` itself, on the box, and hands clients the resulting IP -- a name
@@ -130,7 +130,7 @@ same fix.
 
 - `docker logs ac-worldserver | grep ready`; `docker ps` shows neko-website healthy
 - Log in from **outside** (public address) and from a **LAN** client (gets
-  192.168.1.8 via the /8 mask) -- talent frame opens (DBC bind mounts)
+  <REALM-LAN-IP> via the /8 mask) -- talent frame opens (DBC bind mounts)
 - Site: realm status both green, staff login lands on the post list, post a
   news item, RSS validates, register a throwaway account and click the mail
   link, `/downloads/nekocore-patch.zip` serves and contains `Data/enUS/realmlist.wtf`
@@ -291,7 +291,10 @@ the share carries the dump, the box applies it, and the two live-owned
 databases only ever receive the same migrations the dev database already went
 through. `RESTORE_DB=1` (all three) is a pre-launch-only reset.
 
-## Deploy drops on the share
+## Deploy drops on the share (legacy)
+
+**Replaced by GitHub releases and `nekocore update`; see `releases.md`.** The
+drop scripts below still work for a box that hasn't been moved over yet.
 
 `Y:\nekocore-deploy\` (`\deploy\deploy`) holds the full production drop --
 images, DB dumps, runtime tree, `install-from-mount.sh` / `update-from-mount.sh` /

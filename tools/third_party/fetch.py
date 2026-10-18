@@ -73,6 +73,36 @@ MODS: dict[str, tuple[str, str, str]] = {
     "Acore_ExchangeNpc": (
         "https://github.com/55Honey/Acore_ExchangeNpc",
         "6e99cfc5cbcc2af6a90620a1224f9645397aab8a", "data"),
+    # The rest of the compiled modules the realm runs (pinned 2026-10-18 from
+    # the live checkout, so a CI build from a clean tree matches it).
+    # mod-live-reload and mod-xp-changer are hand-written and live in this
+    # repo's modules/ instead (tools/build/prepare-server.sh copies them).
+    "mod-ale": (
+        "https://github.com/azerothcore/mod-ale",
+        "bd74eae623ca63154d3eb49e1d187e872ef13370", "cpp"),
+    "mod-assistant": (
+        "https://github.com/noisiver/mod-assistant",
+        "77505b1a3d561438a13fd3fabfe40676daa7fdfe", "cpp"),
+    "mod-autobalance": (
+        "https://github.com/azerothcore/mod-autobalance",
+        "73d4ad3c379fbfc35c63b5b9b44fba1f7d9e213d", "cpp"),
+    "mod-dungeonmaster": (
+        "https://github.com/bewarellamas/mod-dungeonmaster",
+        "07638d584a52e916deaf99d36ce4a40799a1065d", "cpp"),
+    "DungeonRespawn": (
+        "https://github.com/AnchyDev/DungeonRespawn",
+        "5f000ebea24ab6913eee23e30cb09907d8811e3b", "cpp"),
+    # Our fork: all 22 optional SQL files enabled, AREA_SILVERMOON_CITY fix.
+    "mod-individual-progression": (
+        "https://github.com/m0nnnna/mod-individual-progression",
+        "afec4d7b387672857d243c6e11b560c81308952a", "cpp"),
+    # Our fork; needs core-patches/0000-solo-lfg-toggle.patch.
+    "mod-solo-lfg": (
+        "https://github.com/m0nnnna/mod-solo-lfg",
+        "5cdb65630bc102d63391997314335d9a327334f1", "cpp"),
+    "mod-transmog": (
+        "https://github.com/azerothcore/mod-transmog",
+        "0d85cbc53d63ce2df8527169ce6ae47f5f6f6ba8", "cpp"),
 }
 
 

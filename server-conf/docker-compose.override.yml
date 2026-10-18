@@ -1,0 +1,120 @@
+# nekocore's overrides on top of AzerothCore's docker-compose.yml. The master
+# copy is server-conf/docker-compose.override.yml in the nekocore repo;
+# tools/build/prepare-server.sh (dev box) and `nekocore update` (realm box)
+# put it next to AzerothCore's compose file. Every bind mount below is
+# relative to that server/ folder, so the install as a whole can move.
+#
+# Images: NEKOCORE_IMAGES/NEKOCORE_TAG in .env. A realm box runs the images
+# GitHub Actions builds (tag stable, edge or vX.Y.Z, set by `nekocore update`);
+# the dev box builds its own with `docker compose build` (tag local).
+
+services:
+  ac-db-import:
+    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-db-import:${NEKOCORE_TAG:-local}
+
+  ac-worldserver:
+    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-worldserver:${NEKOCORE_TAG:-local}
+    environment:
+      AC_SOAP_ENABLED: "1"
+      AC_SOAP_IP: "0.0.0.0"
+      AC_SOAP_PORT: "7878"
+    # nekocore: full-replacement era talent trees (tools/build_patch/build_era_tree.py)
+    # -- stock WotLK Talent.dbc/TalentTab.dbc rows untouched, plus each
+    # class's authentic era tree under brand-new dedicated tab ids. See
+    # ../README.md.
+    volumes:
+      - "../data/generated/Talent.dbc:/azerothcore/env/dist/data/dbc/Talent.dbc:ro"
+      - "../data/generated/TalentTab.dbc:/azerothcore/env/dist/data/dbc/TalentTab.dbc:ro"
+      # mod-individual-progression's optional/ DBCs (SkillLine/SkillLineAbility/
+      # SkillRaceClassInfo/SpellItemEnchantment always; Spell.dbc is the
+      # patch-V variant -- era-authentic lower mana costs, chosen over patch-S's
+      # "keep WotLK costs"). Staged by nekocore's own install_client.py
+      # (--progression-module-root), which also bundles Spell.dbc into the
+      # client MPQ -- see ../README.md. Server-only DBCs don't need a
+      # client copy at all; the client never validates against them directly.
+      - "../client-patch/progression-optional/SkillLine.dbc:/azerothcore/env/dist/data/dbc/SkillLine.dbc:ro"
+      # SkillLineAbility is NOT progression's copy directly any more:
+      # tools/build_patch/build_era_spells.py layers a row per era spell
+      # clone on top of it (so the client files the clone in the right
+      # spellbook tab) -> data/generated/SkillLineAbility.dbc, the same file
+      # install_client.py now puts in the client MPQ. Same relationship
+      # Spell.dbc already has with port_era_spells.py.
+      - "../data/generated/SkillLineAbility.dbc:/azerothcore/env/dist/data/dbc/SkillLineAbility.dbc:ro"
+      - "../client-patch/progression-optional/SpellItemEnchantment.dbc:/azerothcore/env/dist/data/dbc/SpellItemEnchantment.dbc:ro"
+      # Spell.dbc is NOT progression's copy directly: tools/build_patch/
+      # port_era_spells.py layers the era-talent rank spells WotLK deleted
+      # (from the 2.4.3 client) on top of it -> data/generated/Spell.dbc,
+      # the same file install_client.py puts in the client MPQ.
+      - "../data/generated/Spell.dbc:/azerothcore/env/dist/data/dbc/Spell.dbc:ro"
+      # Spell index side tables, extended by tools/build_patch/build_era_spells.py
+      # when an era cast time / duration / radius / range had no equivalent
+      # row in WotLK's own table. An era spell row indexes into these, so the
+      # realm and the client MPQ must carry the same copy or that spell gets
+      # the wrong range or cast time. Only SpellRange.dbc needs it today; the
+      # other three are listed so a rebuild that starts emitting one does not
+      # silently go unmounted. Remove a line if its file is not generated --
+      # Docker will not start the container with a mount source missing.
+      - "../data/generated/SpellRange.dbc:/azerothcore/env/dist/data/dbc/SpellRange.dbc:ro"
+      # The client patch version the realm expects (install_client.py
+      # stamp_patch_version), compared with what NekoPatchCheck reports --
+      # src/PatchCheck.cpp (Nekocore.PatchVersionFile). Same build as the
+      # patch zip, or every player is told to update. Outside data/: that is a
+      # read-only volume, and a mount there needs the file to exist in it.
+      - "../data/generated/patch-version.txt:/azerothcore/nekocore/patch-version.txt:ro"
+      # Merged third-party DBCs (tools/build_patch/build_mod_dbcs.py): stock +
+      # mod-uac + Prestige + progression's SkillRaceClassInfo row,
+      # merged row-by-row because more than one of them edits the same file.
+      # The same files go into the client's patch-Z.mpq via install_client.py.
+      - "../data/generated/dbc/CharBaseInfo.dbc:/azerothcore/env/dist/data/dbc/CharBaseInfo.dbc:ro"
+      - "../data/generated/dbc/CharStartOutfit.dbc:/azerothcore/env/dist/data/dbc/CharStartOutfit.dbc:ro"
+      - "../data/generated/dbc/CharTitles.dbc:/azerothcore/env/dist/data/dbc/CharTitles.dbc:ro"
+      - "../data/generated/dbc/SkillRaceClassInfo.dbc:/azerothcore/env/dist/data/dbc/SkillRaceClassInfo.dbc:ro"
+      # mod-ale (Eluna-style Lua scripting). ALE.ScriptPath (mod_ale.conf) is
+      # set to this same absolute path -- the module's own relative default
+      # ("lua_scripts") resolves against the worldserver process's cwd
+      # (/azerothcore, confirmed via /proc/1/cwd), which is the container's
+      # own ephemeral filesystem, not anything host-persistent. Mounting a
+      # real directory here and pointing ALE.ScriptPath at it keeps scripts
+      # surviving a rebuild instead of vanishing with the old container.
+      - "./env/dist/lua_scripts:/azerothcore/env/dist/lua_scripts"
+
+  # nekocore: the website (news, registration, leaderboard) on its own port.
+  # Master copy of this service block: ../website/docker-compose.website.yml
+  # -- it's duplicated here so `docker compose up -d` brings it up with the realm.
+  ac-authserver:
+    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-authserver:${NEKOCORE_TAG:-local}
+    # The authserver resolves realmlist.address (wow1.nekos.farm) once at
+    # startup and exits if it can't -- after a recreate or reboot the
+    # container's DNS can lag behind, leaving it in a restart loop until
+    # resolution works. Pin the name to the VPS (docs/deploy.md) in the
+    # container's hosts file so startup never waits on DNS. Harmless on the
+    # dev box, whose realm row uses a plain IP. REALM_HOSTS_ENTRY in .env,
+    # e.g. "wow1.example.org:203.0.113.5".
+    extra_hosts:
+      - "${REALM_HOSTS_ENTRY:-nekocore.invalid:127.0.0.1}"
+
+  neko-website:
+    container_name: neko-website
+    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-website:${NEKOCORE_TAG:-local}
+    build:
+      context: ../website
+    networks:
+      - ac-network
+    restart: unless-stopped
+    ports:
+      - ${DOCKER_WEB_EXTERNAL_PORT:-8088}:80
+    env_file:
+      - ../website/docker.env
+    environment:
+      NEKO_DB_HOST: ac-database
+      NEKO_DB_USER: root
+      NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:?set DOCKER_DB_ROOT_PASSWORD in .env}
+      NEKO_AUTH_HOST: ac-authserver
+      NEKO_WORLD_HOST: ac-worldserver
+      NEKO_REALM_ADDRESS: ${NEKO_REALM_ADDRESS:-wow1.nekos.farm}
+      NEKO_PATCH_URL: downloads/nekocore-patch.zip
+    volumes:
+      - ../website/downloads:/var/www/html/downloads:ro
+    depends_on:
+      ac-database:
+        condition: service_healthy

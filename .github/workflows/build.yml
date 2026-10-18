@@ -1,0 +1,137 @@
+# Builds the realm images and the runtime bundle from a clean checkout.
+#
+#   push to master  -> images :edge and :sha-<commit>, the rolling "edge" prerelease
+#   tag v1.2.3      -> images :v1.2.3 and :stable, release v1.2.3 (the latest release)
+#
+# Realm boxes pick them up with `nekocore update` (stable) or `nekocore update
+# --edge`. Game data (DBCs, the player patch, the world DB) is not built here:
+# it comes from the game client, so `nekocore publish` uploads it from the dev
+# box to the private data repository instead. See docs/releases.md.
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGES: ghcr.io/${{ github.repository_owner }}/nekocore
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make room
+        # The AzerothCore build stage needs ~15 GB; the runner image ships with
+        # toolchains we don't use.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - name: Version
+        id: v
+        run: |
+          version=$(git describe --tags --match 'v*' --always)
+          sha=$(git rev-parse --short=12 HEAD)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            channel=stable
+            tags="$GITHUB_REF_NAME stable"
+          else
+            channel=edge
+            tags="edge sha-$sha"
+          fi
+          {
+            echo "version=$version"
+            echo "sha=$sha"
+            echo "channel=$channel"
+            echo "tags=$tags"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $version ($channel)"
+
+      - name: Prepare the AzerothCore tree
+        run: tools/build/prepare-server.sh
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ccache
+          key: ccache-${{ github.sha }}
+          restore-keys: ccache-
+
+      - name: Hand ccache to BuildKit
+        # The Dockerfile compiles with a --mount=type=cache,target=/ccache;
+        # this moves our cached copy in and out of it.
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            {"ccache": "/ccache"}
+
+      - name: Build and push
+        env:
+          TAGS: ${{ steps.v.outputs.tags }}
+          SOURCE: https://github.com/${{ github.repository }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          build() { # name context dockerfile [target]
+            name=$1 ctx=$2 file=$3 target=${4:-}
+            args=()
+            for t in $TAGS; do args+=(-t "$IMAGES-$name:$t"); done
+            [ -n "$target" ] && args+=(--target "$target")
+            docker buildx build "${args[@]}" \
+              -f "$file" \
+              --build-arg USER_ID=1000 --build-arg GROUP_ID=1000 --build-arg DOCKER_USER=acore \
+              --label "org.opencontainers.image.source=$SOURCE" \
+              --label "org.opencontainers.image.version=$VERSION" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              --push "$ctx"
+          }
+          # Same builder for all three: the compile stage is built once and reused.
+          build worldserver server server/apps/docker/Dockerfile worldserver
+          build authserver  server server/apps/docker/Dockerfile authserver
+          build db-import   server server/apps/docker/Dockerfile db-import
+          build website     website website/Dockerfile
+
+      - name: Runtime bundle
+        run: tools/build/runtime-bundle.sh dist "${{ steps.v.outputs.version }}"
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          SHA: ${{ steps.v.outputs.sha }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            else
+              gh release create "$GITHUB_REF_NAME" dist/* --title "NekoCore ${GITHUB_REF_NAME#v}" --generate-notes --verify-tag
+            fi
+          else
+            # One rolling prerelease that always points at master's last good build.
+            gh release delete edge --cleanup-tag --yes >/dev/null 2>&1 || true
+            gh release create edge dist/* --prerelease --latest=false --target "$GITHUB_SHA" \
+              --title "NekoCore edge ($VERSION)" \
+              --notes "Built from master at $GITHUB_SHA. Images: \`$IMAGES-*:edge\` (also \`:sha-$SHA\`). Install with \`nekocore update --edge\`."
+          fi

@@ -27,7 +27,7 @@ services:
       # a limited account instead.
       NEKO_DB_HOST: ac-database
       NEKO_DB_USER: root
-      NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:-password}
+      NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:?set DOCKER_DB_ROOT_PASSWORD in .env}
       NEKO_AUTH_HOST: ac-authserver
       NEKO_WORLD_HOST: ac-worldserver
       NEKO_REALM_ADDRESS: wow1.nekos.farm

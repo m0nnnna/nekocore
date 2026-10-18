@@ -1,9 +1,12 @@
 # Core patches
 
-Patches against the `C:\nekocore\server` checkout that nekocore needs and that
-can't be done from a module hook. Apply from the AzerothCore root with
-`git apply <path>` after any core update, then rebuild `ac-worldserver`.
+Patches against AzerothCore (the commit in `build/azerothcore.lock`) that
+nekocore needs and that can't be done from a module hook.
+`tools/build/prepare-server.sh` applies them in order (skipping any already
+applied), on the dev box and in CI; `--check` confirms `server/` carries them.
 
+- `0000-solo-lfg-toggle.patch` -- `LFGMgr::IsSoloLFG` / `ToggleSoloLFG`, the
+  core hook mod-solo-lfg calls to let one player queue for a dungeon.
 - `0001-LearnTalent-count-spent-points-per-tab.patch` -- `Player::LearnTalent`
   counted "points spent in this tree" via the spell-keyed, last-writer-wins
   `sTalentSpellPosMap`, which misattributes every shared spell to the TBC

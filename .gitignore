@@ -40,3 +40,10 @@ website/downloads/*
 # Stamped by install_client.py on every patch build (stamp_patch_version).
 client-patch/Interface/AddOns/NekoPatchCheck/Version.lua
 data/generated/patch-version.txt
+
+# Database dumps (tools/server/backup_db.sh, `nekocore backup`): accounts and
+# characters, never public.
+/backups/
+*.sql.gz
+# Build output of tools/build/ and `nekocore publish`.
+/dist/

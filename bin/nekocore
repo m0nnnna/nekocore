@@ -1,0 +1,623 @@
+#!/bin/sh
+# nekocore: update, back up and look after a NekoCore realm, and publish
+# releases from the dev box. Plain POSIX sh (the realm box may be Alpine's
+# ash); needs docker with compose v2 and curl. Run `nekocore help`.
+#
+# Realm box (the install, default /opt/nekocore):
+#   nekocore status                 version, channel, containers, players online
+#   nekocore update                 newest stable release (GitHub releases)
+#   nekocore update --edge          newest build of master
+#   nekocore update --version v1.2  one release in particular
+#       --check      only say whether there is one (exit 10 = update waiting)
+#       --yes        don't ask, even with players online
+#       --no-world   keep acore_world even if the release ships a new dump
+#       --no-backup  skip the database backup taken before every update
+#       --force      reinstall what is already installed
+#   nekocore rollback               back to what ran before the last update
+#   nekocore channel [stable|edge]  show or set what a bare `update` follows
+#   nekocore backup [db ...]        dump acore_auth/characters/world to backups/
+#   nekocore backups                list them
+#   nekocore restore FILE|latest DB put one back (stops the realm while it runs)
+#   nekocore cron                   install the backup + edge/stable update crontab
+#   nekocore logs [service]         follow a container's log (default worldserver)
+#   nekocore restart [service]      restart the realm (asks if players are on)
+#   nekocore install                first-time setup of a new box
+#
+# Dev box (inside a nekocore git checkout, needs gh):
+#   nekocore build                  prepare server/ and build the images (:local)
+#   nekocore publish v1.2.3 [--world] [--notes FILE] [--draft]
+#                                   game data -> private release, tag -> GitHub
+#                                   Actions builds and publishes the release
+#   nekocore publish --edge [--world]
+#                                   game data for edge boxes (code edge = master)
+#
+# Settings: <install>/nekocore.env (NEKOCORE_REPO, NEKOCORE_DATA_REPO,
+# NEKOCORE_CHANNEL, GITHUB_TOKEN, ...). docs/releases.md has the whole story.
+set -eu
+
+SELF=$(readlink -f "$0" 2>/dev/null || echo "$0")
+SELF_DIR=$(cd "$(dirname "$SELF")" && pwd)
+
+die() { echo "nekocore: $*" >&2; exit 1; }
+say() { printf '==> %s\n' "$*"; }
+warn() { printf 'warning: %s\n' "$*" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- where things are --------------------------------------------------------
+
+# The install is the folder above bin/ when it looks like one (bin/nekocore
+# inside /opt/nekocore), else $NEKOCORE_HOME, else /opt/nekocore.
+if [ -z "${NEKOCORE_HOME:-}" ]; then
+    if [ -d "$SELF_DIR/../server" ] && [ ! -d "$SELF_DIR/../.git" ]; then
+        NEKOCORE_HOME=$(cd "$SELF_DIR/.." && pwd)
+    else
+        NEKOCORE_HOME=/opt/nekocore
+    fi
+fi
+H=$NEKOCORE_HOME
+CONF="$H/nekocore.env"
+S="$H/server"
+
+# A KEY=VALUE file, read without sourcing it (values may hold anything).
+kv_get() { [ -f "$1" ] && grep -E "^$2=" "$1" | tail -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true; }
+kv_set() { # file key value
+    touch "$1"
+    if grep -qE "^$2=" "$1"; then
+        tmp="$1.tmp.$$"
+        awk -v k="$2" -v v="$3" 'BEGIN{FS=OFS="="} $1==k{print k "=" v; next} {print}' "$1" > "$tmp" && cat "$tmp" > "$1" && rm -f "$tmp"
+    else
+        printf '%s=%s\n' "$2" "$3" >> "$1"
+    fi
+}
+conf() { v=$(kv_get "$CONF" "$1"); [ -n "$v" ] && echo "$v" || echo "${2:-}"; }
+
+REPO_SLUG=$(conf NEKOCORE_REPO m0nnnna/nekocore)
+DATA_SLUG=$(conf NEKOCORE_DATA_REPO "${REPO_SLUG}-data")
+TOKEN=${GITHUB_TOKEN:-$(conf GITHUB_TOKEN)}
+IMAGES=$(conf NEKOCORE_IMAGES "ghcr.io/$(echo "$REPO_SLUG" | cut -d/ -f1 | tr '[:upper:]' '[:lower:]')/nekocore")
+BACKUP_KEEP=$(conf BACKUP_KEEP 48)
+
+compose() { (cd "$S" && docker compose "$@"); }
+db_pw() { kv_get "$S/.env" DOCKER_DB_ROOT_PASSWORD; }
+mysql_q() { docker exec ac-database mysql -N -B -uroot -p"$(db_pw)" -e "$1" 2>/dev/null; }
+
+need_box() {
+    [ -f "$S/.env" ] || die "no install at $H (server/.env missing) -- set NEKOCORE_HOME or run 'nekocore install'"
+    have docker || die "docker not installed"
+    docker compose version >/dev/null 2>&1 || die "docker compose v2 missing (Alpine: apk add docker-cli-compose)"
+    [ -n "$(db_pw)" ] || die "DOCKER_DB_ROOT_PASSWORD missing from $S/.env"
+}
+
+players_online() { mysql_q "SELECT COUNT(*) FROM acore_characters.characters WHERE online=1" || echo 0; }
+
+# The mysql image first runs a temporary server (socket only) during
+# initialisation; a bare SELECT 1 can land on that one. Wait for the real one.
+wait_for_mysql() {
+    i=0
+    until docker logs ac-database 2>&1 | grep -q 'ready for connections.*port: 3306' && mysql_q "SELECT 1" >/dev/null; do
+        i=$((i + 1)); [ $i -gt 120 ] && { docker logs --tail 20 ac-database >&2; die "ac-database never became ready"; }
+        sleep 2
+    done
+}
+
+confirm() { # question; --yes or a non-tty answers no unless YES=1
+    [ "${YES:-0}" = 1 ] && return 0
+    [ -t 0 ] || return 1
+    printf '%s [y/N] ' "$1"; read -r a; case "$a" in y|Y|yes) return 0 ;; *) return 1 ;; esac
+}
+
+# --- GitHub ------------------------------------------------------------------
+
+gh_api() { # path -> JSON on stdout; fails on HTTP errors
+    have curl || die "curl not installed (Alpine: apk add curl)"
+    if [ -n "$TOKEN" ]; then
+        curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
+    else
+        curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
+    fi
+}
+json_str() { # key < json -> first "key": "value"
+    sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" | head -1
+}
+# release JSON -> "name<TAB>api-url" per asset. An asset's "url" (…/releases/assets/N)
+# comes before its "name"; the release's own name comes before any asset.
+json_assets() {
+    tr ',' '\n' | awk '
+        /"url": *"[^"]*\/releases\/assets\/[0-9]+"/ { u = $0; sub(/.*"url": *"/, "", u); sub(/".*/, "", u); next }
+        /"name": *"/ && u != "" { n = $0; sub(/.*"name": *"/, "", n); sub(/".*/, "", n); print n "\t" u; u = "" }'
+}
+asset_url() { printf '%s\n' "$1" | json_assets | awk -F'\t' -v n="$2" '$1==n{print $2; exit}'; }
+download() { # api-url dest
+    if [ -n "$TOKEN" ]; then
+        curl -fSL --retry 3 -o "$2" -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$1"
+    else
+        curl -fSL --retry 3 -o "$2" -H "Accept: application/octet-stream" "$1"
+    fi
+}
+fetch_asset() { # release-json name dir -> dir/name, checked against name.sha256 if the release has one
+    u=$(asset_url "$1" "$2"); [ -n "$u" ] || return 1
+    download "$u" "$3/$2" || die "download of $2 failed"
+    su=$(asset_url "$1" "$2.sha256")
+    if [ -n "$su" ]; then
+        download "$su" "$3/$2.sha256" >/dev/null 2>&1 || die "download of $2.sha256 failed"
+        (cd "$3" && sha256sum -c "$2.sha256" >/dev/null 2>&1) || die "$2 doesn't match its checksum"
+    fi
+}
+
+# --- realm box: state --------------------------------------------------------
+
+installed_version() { v=$(cat "$H/VERSION" 2>/dev/null || true); echo "${v:-none (installed from a deploy drop)}"; }
+installed_commit() { cat "$H/COMMIT" 2>/dev/null || true; }
+channel() { c=$(conf NEKOCORE_CHANNEL stable); echo "$c"; }
+
+cmd_status() {
+    need_box
+    echo "NekoCore at $H"
+    echo "  version   $(installed_version)"
+    echo "  channel   $(channel)    images $(kv_get "$S/.env" NEKOCORE_IMAGES)-*:$(kv_get "$S/.env" NEKOCORE_TAG)"
+    echo "  players   $(players_online) online"
+    last=$(ls -1t "$H"/backups/*/*.sql.gz 2>/dev/null | head -1 || true)
+    echo "  patch     $(cat "$H/PATCH_VERSION" 2>/dev/null || echo unknown)"
+    echo "  backup    ${last:-none yet}"
+    [ "$(db_pw)" = password ] && warn "the MySQL root password is still 'password' (DOCKER_DB_ROOT_PASSWORD)"
+    echo
+    compose ps --format 'table {{.Service}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || compose ps
+}
+
+cmd_channel() {
+    case "${1:-}" in
+        "") echo "$(channel)" ;;
+        stable|edge) kv_set "$CONF" NEKOCORE_CHANNEL "$1"; echo "following $1 (applies to the next 'nekocore update')" ;;
+        *) die "channel is stable or edge" ;;
+    esac
+}
+
+# --- realm box: backups ------------------------------------------------------
+
+cmd_backup() {
+    need_box
+    [ $# -gt 0 ] || set -- acore_auth acore_characters acore_world
+    for db in "$@"; do
+        sh "$H/tools/server/backup_db.sh" "$db" "$S" "$H/backups" "$BACKUP_KEEP"
+    done
+}
+
+cmd_backups() {
+    for d in "$H"/backups/*/; do
+        [ -d "$d" ] || continue
+        echo "$(basename "$d"):"
+        ls -1t "$d" | head -5 | sed 's/^/  /'
+        n=$(ls -1 "$d" | wc -l); if [ "$n" -gt 5 ]; then echo "  ... $n in all"; fi
+    done
+}
+
+restore_db() { # dbname file.sql.gz  (ac-database up, the realm stopped)
+    printf '    %s <- %s ... ' "$1" "$(basename "$2")"
+    mysql_q "DROP DATABASE IF EXISTS \`$1\`; CREATE DATABASE \`$1\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" >/dev/null
+    gzip -dc "$2" | docker exec -i ac-database mysql -uroot -p"$(db_pw)" "$1" 2>&1 | grep -v 'Using a password' || true
+    echo "done"
+}
+
+cmd_restore() {
+    need_box
+    f=${1:-}; db=${2:-}
+    [ -n "$f" ] || die "usage: nekocore restore FILE|latest DB"
+    if [ "$f" = latest ]; then
+        [ -n "$db" ] || die "usage: nekocore restore latest acore_characters"
+        f=$(ls -1 "$H/backups/$db/${db}_"*.sql.gz 2>/dev/null | sort | tail -1)
+        [ -n "$f" ] || die "no backups of $db in $H/backups/$db"
+    fi
+    [ -f "$f" ] || die "$f not found"
+    if [ -z "$db" ]; then
+        db=$(basename "$f" | sed -E 's/_[0-9]{8}_[0-9]{6}\.sql\.gz$//; s/\.sql\.gz$//')
+    fi
+    case "$db" in acore_auth|acore_characters|acore_world) ;; *) die "which database is $f? give it: nekocore restore FILE acore_..." ;; esac
+    on=$(players_online)
+    confirm "Replace $db with $(basename "$f")? The realm stops while it runs ($on players online)." || die "not restored (add --yes to skip the question)"
+    say "backing up the current $db first"
+    sh "$H/tools/server/backup_db.sh" "$db" "$S" "$H/backups" "$BACKUP_KEEP"
+    compose stop ac-worldserver ac-authserver neko-website
+    restore_db "$db" "$f"
+    [ "$db" = acore_auth ] && sh "$H/tools/server/apply_realmlist.sh" "$S" >/dev/null
+    compose up -d
+    say "restored $db"
+}
+
+cmd_cron() {
+    have crontab || die "crontab not available"
+    me="$H/bin/nekocore"
+    upd="--yes"
+    [ "$(channel)" = edge ] && upd="--edge --yes"
+    block="# nekocore (managed by 'nekocore cron')
+15 * * * * $me backup acore_auth acore_characters >> $H/backups/cron.log 2>&1
+30 4 * * * $me backup acore_world >> $H/backups/cron.log 2>&1
+# Updates only when nobody is online (update refuses with players on unless --yes,
+# and this check keeps --yes from kicking anyone):
+0 5 * * * [ \"\$($me players)\" = 0 ] && $me update $upd >> $H/update.log 2>&1
+# end nekocore"
+    current=$(crontab -l 2>/dev/null | awk '/^# nekocore \(managed/{skip=1} !skip{print} /^# end nekocore/{skip=0}')
+    printf '%s\n%s\n' "$current" "$block" | sed '/^$/N;/^\n$/D' | crontab -
+    mkdir -p "$H/backups"
+    echo "crontab installed:"; echo "$block" | sed 's/^/  /'
+}
+
+# --- realm box: update / rollback --------------------------------------------
+
+# Files an update owns. Everything else (server/.env, website/docker.env,
+# nekocore.env, backups/, logs, the client data) is the box's own.
+MANAGED="PATCH_VERSION server/docker-compose.yml server/docker-compose.override.yml server/conf/dist/env.ac server/env/dist/etc server/env/dist/lua_scripts server/.env data/generated data/sql client-patch/progression-optional tools/server website/downloads website/docker.env.example bin/nekocore VERSION COMMIT"
+
+snapshot() { # -> $H/.previous.tar.gz
+    list=""
+    for p in $MANAGED; do [ -e "$H/$p" ] && list="$list $p"; done
+    # shellcheck disable=SC2086
+    tar -C "$H" -czf "$H/.previous.tar.gz.partial" $list
+    mv "$H/.previous.tar.gz.partial" "$H/.previous.tar.gz"
+}
+
+# Recreates the stack, then waits (up to 10 min) for the worldserver to log
+# "... ready...". A crash, exit or restart on the way counts as a failure.
+recreate_and_check() {
+    start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    compose up -d --force-recreate --remove-orphans
+    say "waiting for the worldserver to come up"
+    i=0
+    while [ $i -lt 120 ]; do
+        st=$(docker inspect -f '{{.State.Status}} {{.RestartCount}}' ac-worldserver 2>/dev/null || echo "missing 0")
+        case "$st" in
+            exited*|dead*) return 1 ;;
+            *" 0") ;;
+            *) return 1 ;;
+        esac
+        docker logs --since "$start" ac-worldserver 2>&1 | grep -q 'ready\.\.\.' && return 0
+        i=$((i + 1)); sleep 5
+    done
+    # Still starting after 10 min (a long first map load) but not crashing: let it be.
+    [ "$(docker inspect -f '{{.State.Status}}' ac-worldserver 2>/dev/null)" = running ]
+}
+
+cmd_rollback() {
+    need_box
+    [ -f "$H/.previous.tar.gz" ] || die "nothing to roll back to (no $H/.previous.tar.gz)"
+    prev=$(tar -xzf "$H/.previous.tar.gz" -O VERSION 2>/dev/null || echo "the deploy-drop install")
+    confirm "Go back to $prev? (Databases are not touched; 'nekocore restore' puts a backup back.)" || die "not rolled back (add --yes)"
+    rollback_files
+    recreate_and_check || warn "the worldserver isn't healthy after the rollback either: nekocore logs"
+    say "back on $prev"
+}
+rollback_files() {
+    say "restoring the previous files"
+    for p in server/env/dist/lua_scripts data/generated data/sql tools/server; do rm -rf "${H:?}/$p"; done
+    tar -C "$H" -xzf "$H/.previous.tar.gz"
+}
+
+migrate_env() { # first update of a box installed from the deploy drop
+    e="$S/.env"
+    [ -n "$(kv_get "$e" NEKOCORE_IMAGES)" ] || kv_set "$e" NEKOCORE_IMAGES "$IMAGES"
+    if ! grep -qE '^REALM_ADDRESS=' "$e"; then
+        row=$(mysql_q "SELECT name, address, localAddress, localSubnetMask FROM acore_auth.realmlist WHERE id=1" || true)
+        if [ -n "$row" ]; then
+            set -- $row
+            kv_set "$e" REALM_NAME "$1"; kv_set "$e" REALM_ADDRESS "$2"
+            kv_set "$e" REALM_LOCAL_ADDRESS "$3"; kv_set "$e" REALM_SUBNET_MASK "$4"
+            echo "    realm row ($2 / $3) saved to server/.env as REALM_*"
+        fi
+    fi
+    if ! grep -qE '^REALM_HOSTS_ENTRY=' "$e"; then
+        # The old override pinned the realm's name in extra_hosts.
+        pin=$(sed -n 's/^ *- *"\([A-Za-z0-9.-]*:[0-9.]*\)" *$/\1/p' "$S/docker-compose.override.yml" 2>/dev/null | head -1)
+        [ -n "$pin" ] && { kv_set "$e" REALM_HOSTS_ENTRY "$pin"; echo "    REALM_HOSTS_ENTRY=$pin saved to server/.env"; }
+    fi
+    if [ -z "$(conf NEKOCORE_TOTP_SECRET)" ]; then
+        sec=$(sed -n 's/^TOTPMasterSecret *= *\([^ ]*\).*/\1/p' "$S/env/dist/etc/worldserver.conf" 2>/dev/null | head -1)
+        [ -n "$sec" ] && { kv_set "$CONF" NEKOCORE_TOTP_SECRET "$sec"; chmod 600 "$CONF"; echo "    TOTPMasterSecret kept in nekocore.env"; }
+    fi
+    return 0
+}
+
+resolve_release() { # sets REL_JSON REL_TAG REL_COMMIT IMG_TAG for $TARGET
+    case "$TARGET" in
+        edge) REL_JSON=$(gh_api "repos/$REPO_SLUG/releases/tags/edge") || die "no edge release on $REPO_SLUG yet (GitHub Actions makes it on the first push to master)" ;;
+        stable) REL_JSON=$(gh_api "repos/$REPO_SLUG/releases/latest") || die "no release on $REPO_SLUG yet (or the repository is private and GITHUB_TOKEN isn't set in $CONF)" ;;
+        *) REL_JSON=$(gh_api "repos/$REPO_SLUG/releases/tags/$TARGET") || die "no release $TARGET on $REPO_SLUG" ;;
+    esac
+    REL_TAG=$(printf '%s' "$REL_JSON" | json_str tag_name)
+    REL_COMMIT=$(printf '%s' "$REL_JSON" | json_str target_commitish)
+    if [ "$REL_TAG" = edge ]; then
+        IMG_TAG="sha-$(printf '%.12s' "$REL_COMMIT")"
+    else
+        IMG_TAG=$REL_TAG
+    fi
+}
+
+cmd_update() {
+    TARGET=$(channel) CHECK=0 NOWORLD=0 NOBACKUP=0 FORCE=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --edge) TARGET=edge ;;
+            --stable) TARGET=stable ;;
+            --version) TARGET=${2:?--version needs a tag}; shift ;;
+            --check) CHECK=1 ;;
+            --yes|-y) YES=1 ;;
+            --no-world) NOWORLD=1 ;;
+            --no-backup) NOBACKUP=1 ;;
+            --force) FORCE=1 ;;
+            *) die "unknown option $1 (nekocore help)" ;;
+        esac
+        shift
+    done
+    need_box
+    resolve_release
+    # Edge is the same tag every time; what moved is the commit.
+    if [ "$REL_TAG" = edge ]; then
+        current=$(installed_commit); wanted=$REL_COMMIT
+    else
+        current=$(installed_version); wanted=$REL_TAG
+    fi
+    if [ "$current" = "$wanted" ] && [ $FORCE = 0 ]; then
+        echo "up to date ($(installed_version))"
+        [ $CHECK = 1 ] && exit 0 || return 0
+    fi
+    if [ $CHECK = 1 ]; then
+        echo "update waiting: $(installed_version) -> $REL_TAG${REL_TAG:+ }$( [ "$REL_TAG" = edge ] && printf '(%.12s)' "$REL_COMMIT")"
+        exit 10
+    fi
+
+    on=$(players_online)
+    if [ "$on" -gt 0 ]; then
+        confirm "$on players are online and the realm restarts. Update anyway?" || die "not updated: $on players online (--yes to go ahead)"
+    fi
+
+    W="$H/.update"; rm -rf "$W"; mkdir -p "$W"
+    say "downloading $REL_TAG ($(printf '%.12s' "$REL_COMMIT"))"
+    fetch_asset "$REL_JSON" nekocore-runtime.tar.gz "$W" || die "release $REL_TAG has no nekocore-runtime.tar.gz (still building? see the Actions tab)"
+    DATA_JSON=""
+    if [ -n "$TOKEN" ]; then
+        DATA_JSON=$(gh_api "repos/$DATA_SLUG/releases/tags/$REL_TAG" 2>/dev/null || true)
+    fi
+    if [ -n "$DATA_JSON" ]; then
+        fetch_asset "$DATA_JSON" nekocore-gamedata.tar.gz "$W" || warn "data release $REL_TAG has no nekocore-gamedata.tar.gz: keeping this box's game data"
+        if [ $NOWORLD = 0 ] && [ -n "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" ]; then
+            ws=$(download "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" /dev/stdout 2>/dev/null | cut -d' ' -f1)
+            if [ "$ws" != "$(cat "$H/.world-sha256" 2>/dev/null || true)" ]; then
+                fetch_asset "$DATA_JSON" acore_world.sql.gz "$W"
+            fi
+        fi
+    else
+        warn "no game data for $REL_TAG on $DATA_SLUG (${TOKEN:+not published}${TOKEN:-GITHUB_TOKEN not set}): keeping this box's DBCs, patch and world DB"
+    fi
+
+    say "pulling images $IMAGES-*:$IMG_TAG"
+    if [ -n "$TOKEN" ]; then
+        printf '%s' "$TOKEN" | docker login ghcr.io -u "$(echo "$REPO_SLUG" | cut -d/ -f1)" --password-stdin >/dev/null 2>&1 || warn "docker login to ghcr.io failed; trying without"
+    fi
+    for i in worldserver authserver db-import website; do
+        docker pull -q "$IMAGES-$i:$IMG_TAG" >/dev/null || die "couldn't pull $IMAGES-$i:$IMG_TAG -- nothing has been changed"
+    done
+
+    if [ $NOBACKUP = 0 ]; then
+        say "backing up the databases"
+        cmd_backup
+    fi
+    say "keeping a copy of the current install for 'nekocore rollback'"
+    snapshot
+    migrate_env
+
+    say "installing $REL_TAG"
+    tar -C "$W" -xzf "$W/nekocore-runtime.tar.gz"
+    R="$W/nekocore"
+    cp "$R/server/docker-compose.yml" "$R/server/docker-compose.override.yml" "$S/"
+    mkdir -p "$S/conf/dist" "$S/env/dist/etc" "$H/tools" "$H/bin" "$H/website/downloads" "$H/data"
+    cp "$R/server/conf/dist/env.ac" "$S/conf/dist/"
+    cp -a "$R/server/env/dist/etc/." "$S/env/dist/etc/"
+    sec=$(conf NEKOCORE_TOTP_SECRET)
+    if [ -n "$sec" ]; then
+        for f in worldserver authserver; do
+            sed -i "s/^TOTPMasterSecret *=.*/TOTPMasterSecret = $sec/" "$S/env/dist/etc/$f.conf"
+        done
+    fi
+    rm -rf "$S/env/dist/lua_scripts" "$H/data/sql" "$H/tools/server"
+    cp -a "$R/server/env/dist/lua_scripts" "$S/env/dist/lua_scripts"
+    cp -a "$R/data/sql" "$H/data/sql"
+    cp -a "$R/tools/server" "$H/tools/server"
+    cp "$R/website/docker.env.example" "$H/website/"
+    cp "$R/VERSION" "$R/COMMIT" "$H/"
+    [ -f "$S/.env.example" ] || cp "$R/server/.env.example" "$S/.env.example"
+    if [ -f "$W/nekocore-gamedata.tar.gz" ]; then
+        say "game data (patch $(tar -xzf "$W/nekocore-gamedata.tar.gz" -O ./PATCH_VERSION 2>/dev/null))"
+        tar -C "$H" -xzf "$W/nekocore-gamedata.tar.gz"
+    fi
+    kv_set "$S/.env" NEKOCORE_TAG "$IMG_TAG"
+    # Last, so a failed update still leaves the old command to roll back with.
+    cp "$R/bin/nekocore" "$H/bin/nekocore.new" && mv "$H/bin/nekocore.new" "$H/bin/nekocore"
+
+    say "database step"
+    compose stop ac-worldserver ac-authserver neko-website 2>/dev/null || true
+    compose up -d ac-database
+    wait_for_mysql
+    if [ -f "$W/acore_world.sql.gz" ]; then
+        say "new world database from the release"
+        restore_db acore_world "$W/acore_world.sql.gz"
+        cut -d' ' -f1 "$W/acore_world.sql.gz.sha256" > "$H/.world-sha256"
+    fi
+    say "module SQL (ac-db-import)"
+    if ! compose up --exit-code-from ac-db-import ac-db-import; then
+        warn "ac-db-import failed: rolling back the files (databases: nekocore restore latest <db>)"
+        rollback_files; compose up -d; die "update failed, back on $(installed_version)"
+    fi
+    sh "$H/tools/server/apply_realmlist.sh" "$S" >/dev/null || warn "realmlist not applied"
+
+    say "starting $REL_TAG"
+    if ! recreate_and_check; then
+        warn "the worldserver didn't come up on $REL_TAG; going back"
+        docker logs --tail 30 ac-worldserver >&2 || true
+        rollback_files
+        recreate_and_check || warn "the old version isn't healthy either: nekocore logs"
+        die "update failed, back on $(installed_version). If the database step changed something, 'nekocore restore latest <db>' puts the pre-update backup back."
+    fi
+    rm -rf "$W"
+    docker image prune -f >/dev/null 2>&1 || true
+    say "now on $(installed_version)"
+}
+
+cmd_logs() {
+    need_box
+    svc=${1:-ac-worldserver}
+    case "$svc" in ac-*|neko-*) ;; website) svc=neko-website ;; *) svc="ac-$svc" ;; esac
+    docker logs -f --tail 100 "$svc"
+}
+
+cmd_restart() {
+    need_box
+    on=$(players_online)
+    if [ "$on" -gt 0 ]; then confirm "$on players are online. Restart anyway?" || die "not restarted"; fi
+    if [ $# -gt 0 ]; then compose restart "$@"; else compose restart ac-authserver ac-worldserver; fi
+}
+
+cmd_install() {
+    [ ! -f "$H/server/.env" ] || die "$H already has an install: use 'nekocore update'"
+    have docker || die "install docker first (Alpine: apk add docker docker-cli-compose curl)"
+    have curl || die "install curl first"
+    mkdir -p "$H/server" "$H/bin" "$H/backups" || die "can't create $H (run as a user that can write there)"
+    touch "$CONF"; chmod 600 "$CONF"
+    [ -n "$(kv_get "$CONF" NEKOCORE_REPO)" ] || kv_set "$CONF" NEKOCORE_REPO "$REPO_SLUG"
+    [ -n "$(kv_get "$CONF" NEKOCORE_DATA_REPO)" ] || kv_set "$CONF" NEKOCORE_DATA_REPO "$DATA_SLUG"
+    [ -n "$(kv_get "$CONF" NEKOCORE_CHANNEL)" ] || kv_set "$CONF" NEKOCORE_CHANNEL "${CHANNEL:-stable}"
+    [ -n "$TOKEN" ] && [ -z "$(kv_get "$CONF" GITHUB_TOKEN)" ] && kv_set "$CONF" GITHUB_TOKEN "$TOKEN"
+    TARGET=$(channel); resolve_release
+    W=$(mktemp -d)
+    fetch_asset "$REL_JSON" nekocore-runtime.tar.gz "$W" || die "no runtime bundle on $REL_TAG"
+    tar -C "$W" -xzf "$W/nekocore-runtime.tar.gz"
+    cp "$W/nekocore/server/.env.example" "$S/.env"
+    pw=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)
+    kv_set "$S/.env" DOCKER_DB_ROOT_PASSWORD "$pw"
+    kv_set "$S/.env" NEKOCORE_IMAGES "$IMAGES"
+    chmod 600 "$S/.env"
+    mkdir -p "$H/website"
+    [ -f "$H/website/docker.env" ] || cp "$W/nekocore/website/docker.env.example" "$H/website/docker.env"
+    mkdir -p "$S/env/dist/etc" "$S/env/dist/logs" "$S/env/dist/data"
+    cp "$W/nekocore/bin/nekocore" "$H/bin/nekocore"
+    printf 'none\n' > "$H/VERSION"
+    rm -rf "$W"
+    cat <<EOF
+Install prepared at $H. Before the first start:
+  1. edit $S/.env       REALM_ADDRESS (public IP players get), REALM_LOCAL_ADDRESS, ...
+  2. edit $H/website/docker.env   (mail settings)
+  3. set GITHUB_TOKEN in $CONF (read access to $DATA_SLUG) for the game data
+  4. client data (maps/vmaps/mmaps/dbc, 3 GB): copy an existing
+     server/env/dist/data here, or let ac-client-data-init download it
+Then: $H/bin/nekocore update --force --yes
+(Moving players over? 'nekocore restore FILE acore_auth' and ... acore_characters after it.)
+EOF
+}
+
+cmd_players() { need_box; players_online; }
+
+# --- dev box -----------------------------------------------------------------
+
+dev_repo() {
+    R=$(cd "$SELF_DIR/.." && pwd)
+    [ -d "$R/.git" ] && [ -f "$R/build/azerothcore.lock" ] || die "this command runs from a nekocore git checkout (bin/nekocore there)"
+    echo "$R"
+}
+
+cmd_build() {
+    R=$(dev_repo)
+    "$R/tools/build/prepare-server.sh"
+    (cd "$R/server" && NEKOCORE_TAG=local docker compose build ac-worldserver ac-authserver ac-db-import neko-website)
+}
+
+ensure_data_repo() {
+    gh repo view "$DATA_SLUG" >/dev/null 2>&1 && return 0
+    say "creating the private data repository $DATA_SLUG"
+    gh repo create "$DATA_SLUG" --private --description "NekoCore game data releases (private: built from the game client)" >/dev/null
+}
+
+upload_data() { # tag outdir prerelease(0/1)
+    ensure_data_repo
+    if gh release view "$1" -R "$DATA_SLUG" >/dev/null 2>&1; then
+        # A stale world dump must not linger next to new DBCs.
+        for a in $(gh release view "$1" -R "$DATA_SLUG" --json assets -q '.assets[].name'); do
+            gh release delete-asset "$1" "$a" -R "$DATA_SLUG" --yes >/dev/null
+        done
+        gh release upload "$1" "$2"/* -R "$DATA_SLUG" --clobber
+    else
+        pre=""; [ "$3" = 1 ] && pre="--prerelease"
+        # shellcheck disable=SC2086
+        gh release create "$1" "$2"/* -R "$DATA_SLUG" $pre --title "NekoCore game data $1" --notes "Game data for $REPO_SLUG $1 (nekocore publish)."
+    fi
+}
+
+cmd_publish() {
+    R=$(dev_repo)
+    have gh || die "needs the GitHub CLI (gh auth login)"
+    TAG="" WORLD=0 NOTES="" DRAFT=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --edge) TAG=edge ;;
+            --world) WORLD=1 ;;
+            --notes) NOTES=${2:?}; shift ;;
+            --draft) DRAFT=--draft ;;
+            v*) TAG=$1 ;;
+            *) die "unknown option $1" ;;
+        esac
+        shift
+    done
+    [ -n "$TAG" ] || die "usage: nekocore publish v1.2.3 [--world] | --edge [--world]"
+    cd "$R"
+    out="$R/dist/data-$TAG"; rm -rf "$out"
+    if [ "$TAG" = edge ]; then
+        say "game data -> $DATA_SLUG edge"
+        WORLD=$WORLD sh tools/build/gamedata-bundle.sh "$out"
+        upload_data edge "$out" 1
+        echo "Edge boxes pick it up with their next 'nekocore update --edge' (code: push to master)."
+        return 0
+    fi
+
+    echo "$TAG" | grep -qE '^v[0-9]+(\.[0-9]+){1,3}$' || die "give a version tag like v1.2.3"
+    [ -z "$(git status --porcelain)" ] || die "commit (or stash) your changes first"
+    tools/build/prepare-server.sh --check || die "server/ isn't what the repo describes: what you tested isn't what CI would build"
+    git fetch -q origin
+    [ -n "$(git branch -r --contains HEAD)" ] || die "push HEAD first (git push): CI builds what's on GitHub"
+    if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+        if [ -n "$NOTES" ]; then git tag -a "$TAG" -F "$NOTES"; else git tag -a "$TAG" -m "NekoCore ${TAG#v}"; fi
+        echo "tagged HEAD as $TAG"
+    fi
+    [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse HEAD)" ] || die "$TAG isn't HEAD: check it out first"
+
+    # Data first, so it's there when the realm boxes see the release.
+    say "game data -> $DATA_SLUG $TAG"
+    WORLD=$WORLD sh tools/build/gamedata-bundle.sh "$out"
+    upload_data "$TAG" "$out" 0
+    say "pushing $TAG: GitHub Actions builds the images and publishes the release"
+    git push origin "$TAG"
+    if [ -n "$DRAFT" ]; then
+        echo "note: --draft only applies once the release exists; edit it on GitHub."
+    fi
+    echo "Follow it: gh run watch -R $REPO_SLUG   (then realm boxes: nekocore update)"
+}
+
+# -----------------------------------------------------------------------------
+
+YES=${YES:-0}
+cmd=${1:-help}; [ $# -gt 0 ] && shift
+for a in "$@"; do case "$a" in --yes|-y) YES=1 ;; esac; done
+case "$cmd" in
+    status) cmd_status ;;
+    update) cmd_update "$@" ;;
+    rollback) cmd_rollback ;;
+    channel) cmd_channel "$@" ;;
+    backup) cmd_backup "$@" ;;
+    backups) cmd_backups ;;
+    restore) set -- $(printf '%s\n' "$@" | grep -vE '^(--yes|-y)$'); cmd_restore "$@" ;;
+    cron) cmd_cron ;;
+    logs) cmd_logs "$@" ;;
+    restart) set -- $(printf '%s\n' "$@" | grep -vE '^(--yes|-y)$'); cmd_restart "$@" ;;
+    players) cmd_players ;;
+    install) cmd_install ;;
+    build) cmd_build ;;
+    publish) cmd_publish "$@" ;;
+    version) installed_version ;;
+    help|-h|--help) sed -n '2,/^set -eu/p' "$SELF" | sed -e '/^set -eu/d' -e 's/^# \{0,1\}//' ;;
+    *) die "unknown command '$cmd' (nekocore help)" ;;
+esac

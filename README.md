@@ -5,6 +5,10 @@ Client and server work for the NekoCore realm, running on
 build 12340 server) plus
 [mod-individual-progression](https://github.com/ZhengPeiRu21/mod-individual-progression).
 
+**Running a realm:** releases, `nekocore update`, backups and the build
+are in [docs/releases.md](docs/releases.md). The notes below are the
+development log; paths like `C:\nekocore\server` are from the old Windows setup.
+
 **This repo holds only what we add.** It is not a fork of AzerothCore and does
 not vendor the engine or the progression module -- both are read from the
 live checkout at `C:\nekocore\server` (their own separate repos; see that tree's
@@ -231,7 +235,7 @@ stack for testing; explicitly did NOT migrate any database data (fresh
 down`, confirmed zero characters online first), its stale locally-built
 images cleaned up. `C:\nekocore\server` now runs as `ac-database`/`ac-authserver`/
 `ac-worldserver` on the standard ports (3306/3724/8085/7878) -- same ports
-and same LAN address (`192.168.0.10`) external DNS/routing already pointed
+and same LAN address (`<DEV-LAN-IP>`) external DNS/routing already pointed
 at, so no outside reconfiguration needed. One thing the fresh install got
 wrong that needed a manual fix: `realmlist.address` defaulted to
 `127.0.0.1` (only reachable from the host itself) instead of the LAN

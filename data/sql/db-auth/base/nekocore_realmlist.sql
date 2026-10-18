@@ -1,1 +1,0 @@
-REPLACE INTO `realmlist` (`id`, `name`, `address`, `localAddress`, `localSubnetMask`, `port`, `icon`, `flag`, `timezone`, `allowedSecurityLevel`, `population`, `gamebuild`) VALUES (1, 'NekoCore', '108.174.48.199', '192.168.1.8', '255.0.0.0', 8085, 0, 0, 2, 0, 0, 12340);

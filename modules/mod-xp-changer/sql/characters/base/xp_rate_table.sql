@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS `character_xp_rate` (
+    `guid` INT UNSIGNED NOT NULL,
+    `rate` FLOAT NOT NULL DEFAULT 1.0,
+    PRIMARY KEY (`guid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -18,10 +18,21 @@ themselves.
 | [mod-global-chat](https://github.com/azerothcore/mod-global-chat) | AzerothCore community; based on [mod-world-chat](https://github.com/azerothcore/mod-world-chat) by wizzymore | MIT | `.chat` world-wide chat |
 | [Prestige-and-Draft-Mode](https://github.com/Youpeoples/Prestige-and-Draft-Mode) | Youpeoples | MIT | prestige resets, Draft Mode, Chromie, the PrestigeSystem addon |
 | [Acore_ExchangeNpc](https://github.com/55Honey/Acore_ExchangeNpc) | 55Honey (Honey) | AGPL-3.0 | the item / honor exchange NPC |
+| [mod-autobalance](https://github.com/azerothcore/mod-autobalance) | AzerothCore community | AGPL-3.0 (AzerothCore module, no own LICENSE file) | instance scaling for the group size |
+| [mod-assistant](https://github.com/noisiver/mod-assistant) | noisiver | AGPL-3.0 | the assistant NPC |
+| [mod-transmog](https://github.com/azerothcore/mod-transmog) | AzerothCore community | AGPL-3.0 | transmogrification |
+| [mod-dungeonmaster](https://github.com/bewarellamas/mod-dungeonmaster) | bewarellamas | MIT | Dungeon Dan, the dungeon NPC |
+| [DungeonRespawn](https://github.com/AnchyDev/DungeonRespawn) | AnchyDev | MIT | respawn at the dungeon entrance |
+| [mod-solo-lfg](https://github.com/m0nnnna/mod-solo-lfg) (fork) | Milestorme and contributors | MIT | solo dungeon finder |
 
 Also see `docs/third-party-mods.md` for how each is wired in, and each
 project's own README for its full credits (several of them build on earlier
 scripts by other people, listed there).
+
+The release images on ghcr.io are built from exactly these pinned commits
+plus this repository (GitHub Actions, `.github/workflows/build.yml`), which is
+how their source is offered under the AGPL. The patches in `core-patches/`
+modify AzerothCore and are AGPL-3.0 like it.
 
 Game data (DBCs, maps, MPQ contents) derived from Blizzard's client is never
 committed here -- see `.gitignore`. Each operator produces it from their own

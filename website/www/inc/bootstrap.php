@@ -23,9 +23,9 @@ $neko = [
     'tagline'            => 'A cozy little Azeroth, nya~',
     // Where the realm status probe connects. In Docker these are the
     // ac-authserver / ac-worldserver service names on the shared network.
-    'auth_host'          => neko_env('NEKO_AUTH_HOST', '108.174.48.199'),
+    'auth_host'          => neko_env('NEKO_AUTH_HOST', '127.0.0.1'),
     'auth_port'          => (int)neko_env('NEKO_AUTH_PORT', '3724'),
-    'world_host'         => neko_env('NEKO_WORLD_HOST', '108.174.48.199'),
+    'world_host'         => neko_env('NEKO_WORLD_HOST', '127.0.0.1'),
     'world_port'         => (int)neko_env('NEKO_WORLD_PORT', '8085'),
     'registrations_open' => neko_env('NEKO_REGISTRATIONS_OPEN', '1') !== '0',
     'discord_url'        => neko_env('NEKO_DISCORD_URL', 'https://discord.gg/W9cMwT4Ar9'),
