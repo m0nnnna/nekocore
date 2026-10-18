@@ -98,7 +98,11 @@ namespace NekoEraSpells
                 // run every login rather than once.
                 // Racials WotLK added (Every Man for Himself, ...) go the
                 // same way, and are re-added by the same login paths.
-                if (IsWotlkOnlyProfessionPerk(spellId) || IsRacialAddedAfterEra(player, targetEra, spellId))
+                // Profession recipes/ranks the era's client lacked go too
+                // (EraRecipeGates.generated.h); skill-gain perks are
+                // re-added by the core each login and stripped again here.
+                if (IsWotlkOnlyProfessionPerk(spellId) || IsRecipeAfterEra(targetEra, spellId)
+                    || IsRacialAddedAfterEra(player, targetEra, spellId))
                 {
                     moves[spellId] = 0;
                     continue;

@@ -736,11 +736,13 @@ ERA_WARD_REFLECT_TALENTS = {
 ERA_HIDDEN_FROM_CORE = {17056, 17058, 17059, 17060, 17061}  # Furor r1-r5
 
 # Illumination r1-r5. spell_pal_illumination reads the mana returned, as a
-# percent of the heal's base cost, from effect 1's value. WotLK stores it
-# there; the era rows keep it in the core's hard-coded 60% and leave the slot
-# at 0, so a clone returned 1% of the cost -- i.e. no mana on a crit.
+# percent of the heal's base cost, from effect 1's value. WotLK and TBC store
+# it there (TBC: "$s2% of the base cost", 60). The 1.12 rows leave the slot at
+# 0 -- "gain Mana equal to the base cost of the spell", all of it, hard-coded
+# by that core -- so a Vanilla clone returned 1% of the cost, i.e. no mana on
+# a crit. Only an empty slot is filled; TBC keeps its own 60%.
 ERA_ILLUMINATION = {20210, 20212, 20213, 20214, 20215}
-ILLUMINATION_COST_PCT = 60
+VANILLA_ILLUMINATION_COST_PCT = 100
 
 
 def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
@@ -759,8 +761,8 @@ def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
     if original_id in ERA_HIDDEN_FROM_CORE:
         row["SpellClassSet"] = SPELLFAMILY_GENERIC
         return True
-    if original_id in ERA_ILLUMINATION:
-        row["EffectBasePoints_1"] = ILLUMINATION_COST_PCT - 1
+    if original_id in ERA_ILLUMINATION and row["EffectBasePoints_1"] == 0:
+        row["EffectBasePoints_1"] = VANILLA_ILLUMINATION_COST_PCT - 1
         return True
     return False
 
@@ -768,6 +770,71 @@ def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
 SPELLFAMILY_PALADIN = 10
 SPELL_AURA_DUMMY = 4
 FORBEARANCE = 25771
+
+
+SPELL_AURA_PROC_TRIGGER_SPELL = 42
+
+# Seals whose melee proc is a spell of its own carrying the era's numbers.
+# Rank 1 of each points at an id WotLK rewrote in place: Seal of Light's
+# heal 20167 became "0.15 AP + 0.15 SP" (base points -1, spell_bonus_data
+# 0.15/0.15) and Seal of Wisdom's 20168 a 4%-of-max-mana energize (effect
+# 137). The era rows at those ids are flat -- 39 health, 50 mana in both
+# 1.12 and 2.4.3 -- but the clone kept naming the shared id, so it healed
+# and read like WotLK's ("$20167s1" printed 66). Seal of Command's 20424
+# differs too (70% weapon damage, WotLK's is 36%) but is not here:
+# spell_pal_seal_of_command makes it a 3-target cleave cast by id, which is
+# its own piece of work.
+ERA_SEAL_PROC_NAMES = {"Seal of Light", "Seal of Wisdom"}
+
+
+def is_era_seal(row: dict) -> bool:
+    """An era row that is a seal proper: paladin, "Seal of ...", naming its
+    judgement in an EFFECT_2 dummy. Same-named rows without that dummy are
+    the seal's proc halves (Seal of Light's heal, 20333)."""
+    return (row["SpellClassSet"] == SPELLFAMILY_PALADIN and row["Name_lang"]["enUS"].startswith("Seal of")
+            and row["Effect_2"] == SPELL_EFFECT_APPLY_AURA and row["EffectAura_2"] == SPELL_AURA_DUMMY)
+
+
+def seal_proc_halves(spell_ids, era_by_id: dict[int, dict]) -> dict[int, tuple[int, int]]:
+    """{seal id: (effect index, proc half id)} for the ERA_SEAL_PROC_NAMES
+    seals among spell_ids, from the era's own PROC_TRIGGER_SPELL effect.
+
+    Each proc half gets an era copy (era_side_spells), the seal's clone is
+    pointed at it (remap_seal_procs) and so is its tooltip, through
+    remap_era_text_refs. The copy is flat, like the era it comes from: it is
+    listed in era-spell-map.json's "no_bonus", for which
+    build_era_spell_sql.py writes a zero spell_bonus_data row in place of
+    WotLK's 0.15 AP + 0.15 SP or the 1.12 rule's instant-cast default. 1.12
+    gave this heal no bonus; 2.4.3's row is DmgClass NONE with a flat
+    "$20167s1" (WotLK's spells out its AP/SP terms), and its ranks 2-5,
+    which WotLK left unchanged, already healed flat here."""
+    out: dict[int, tuple[int, int]] = {}
+    for spell_id in spell_ids:
+        row = era_by_id.get(spell_id)
+        if row is None or not is_era_seal(row) or row["Name_lang"]["enUS"] not in ERA_SEAL_PROC_NAMES:
+            continue
+        for i in range(3):
+            proc = row[f"EffectTriggerSpell_{i}"]
+            if (row[f"Effect_{i}"] == SPELL_EFFECT_APPLY_AURA and row[f"EffectAura_{i}"] == SPELL_AURA_PROC_TRIGGER_SPELL
+                    and proc in era_by_id):
+                out[spell_id] = (i, proc)
+    return out
+
+
+def remap_seal_procs(rows: list[dict], offset: int, era_ids: dict[int, int],
+                     procs: dict[int, tuple[int, int]]) -> list[int]:
+    """Points each seal clone's proc trigger at its proc half's era copy (see
+    seal_proc_halves). Returns the seal clones changed."""
+    changed = []
+    for row in rows:
+        entry = procs.get(row["ID"] - offset)
+        if entry is None or entry[1] not in era_ids:
+            continue
+        i, proc = entry
+        if row[f"EffectTriggerSpell_{i}"] == proc:
+            row[f"EffectTriggerSpell_{i}"] = era_ids[proc]
+            changed.append(row["ID"])
+    return changed
 
 
 def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
@@ -779,18 +846,18 @@ def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
         21183, is Heart of the Crusader in WotLK: judging Seal of the
         Crusader cast the WotLK talent debuff. Vanilla Judgement of Command
         is itself a dummy naming its damage spell, so that is followed too.
+      * Seal of Light's and Seal of Wisdom's proc halves (seal_proc_halves).
       * Forbearance, which lasts 1 minute in both eras and 2 in WotLK. The
         era immunity handler applies the era's copy.
     """
-    out: set[int] = set()
+    out: set[int] = {proc for _, proc in seal_proc_halves(wanted, era_by_id).values()}
 
     def named(row: dict, i: int) -> int:
         return row[f"EffectBasePoints_{i}"] + 1
 
     for spell_id in wanted:
         row = era_by_id[spell_id]
-        if (row["SpellClassSet"] != SPELLFAMILY_PALADIN or not row["Name_lang"]["enUS"].startswith("Seal of")
-                or row["Effect_2"] != SPELL_EFFECT_APPLY_AURA or row["EffectAura_2"] != SPELL_AURA_DUMMY):
+        if not is_era_seal(row):
             continue
         judgement = era_by_id.get(named(row, 2))
         if judgement is None:
@@ -823,10 +890,7 @@ def as_wotlk_seal(row: dict) -> bool:
     be cast with only Crusader up, and when Righteousness was added after
     it, Crusader was judged instead.
     """
-    # The seal itself names its judgement in an EFFECT_2 dummy; same-named
-    # rows without one are its proc halves (Seal of Light's heal, 20333).
-    if (row["SpellClassSet"] != SPELLFAMILY_PALADIN or not row["Name_lang"]["enUS"].startswith("Seal of")
-            or row["Effect_2"] != SPELL_EFFECT_APPLY_AURA or row["EffectAura_2"] != SPELL_AURA_DUMMY):
+    if not is_era_seal(row):
         return False
     if any(row[f"SpellClassMask_{i}"] & WOTLK_SEAL_FLAGS[i] for i in range(3)):
         return False
@@ -1286,6 +1350,7 @@ def main() -> int:
 
         new_rows: list[dict] = []
         era_bonus: dict[str, dict[str, list[float]]] = {}
+        era_no_bonus: dict[str, list[int]] = {}
         era_ported: dict[str, dict[str, dict]] = {cfg["label"]: {} for cfg in ERA_CONFIG.values()}
         reused_ids: dict[str, list[int]] = {}
         era_rank_links: dict[str, list[list[int]]] = {}
@@ -1426,6 +1491,15 @@ def main() -> int:
                     name = wotlk_row["Name_lang"]["enUS"]
                     print(f"    {spell_id} -> {clone_id}  {name}: {', '.join(changed) or '(name tag only)'}")
 
+            # Seal of Light / Wisdom clones still trigger the shared proc
+            # half WotLK rewrote; point them at this era's copy instead.
+            era_procs = seal_proc_halves(wanted, era_by_id)
+            seal_era_ids = {int(k): v for k, v in era_map.items()}
+            repointed = remap_seal_procs(new_rows[era_rows_start:], offset, seal_era_ids, era_procs)
+            era_no_bonus[label] = sorted({seal_era_ids[p] for _, p in era_procs.values() if p in seal_era_ids})
+            print(f"[{label}] pointed {len(repointed)} seal(s) at this era's copy of their proc "
+                  f"(flat, no spell power): {repointed}", file=sys.stderr)
+
             # Transitive port: a clone can point at a spell WotLK deleted
             # (Vanilla Lightning Shield triggers 26545, Execute triggers
             # 26651, ...). Left alone the clone still casts but its trigger
@@ -1504,6 +1578,8 @@ def main() -> int:
                 bonus: dict[str, list[float]] = {}
                 for base_id, clone_id in era_ids.items():
                     row = by_id[clone_id]
+                    if clone_id in era_no_bonus[label]:
+                        continue  # zero row from build_era_spell_sql.py (seal_proc_halves)
                     if base_id in VANILLA_BONUS_OVERRIDES:
                         bonus[str(clone_id)] = list(VANILLA_BONUS_OVERRIDES[base_id])
                         continue
@@ -1607,7 +1683,7 @@ def main() -> int:
         out_map.write_text(json.dumps(
             {"id_map": id_map, "deleted_by_wotlk": skipped_missing_wotlk,
              "ported": era_ported, "reused": reused_ids, "supersede": era_rank_links,
-             "bonus": era_bonus},
+             "bonus": era_bonus, "no_bonus": era_no_bonus},
             indent=2), encoding="utf-8")
         for label, ids in reused_ids.items():
             print(f"[{label}] {len(ids)} id(s) WotLK reused for a different spell, ported whole "

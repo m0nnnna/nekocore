@@ -73,6 +73,7 @@ namespace
     uint32 BaselineWorldBoss = 15;
     float MinMultiplier     = 0.4f;
     float MaxMultiplier     = 1.5f;
+    bool  ScaleXP           = true;
 
     void LoadWorldEliteScalingConfig()
     {
@@ -83,6 +84,7 @@ namespace
         BaselineWorldBoss = sConfigMgr->GetOption<uint32>("Nekocore.WorldEliteScaling.BaselineWorldBoss", 15);
         MinMultiplier     = sConfigMgr->GetOption<float>("Nekocore.WorldEliteScaling.MinMultiplier", 0.4f);
         MaxMultiplier     = sConfigMgr->GetOption<float>("Nekocore.WorldEliteScaling.MaxMultiplier", 1.5f);
+        ScaleXP           = sConfigMgr->GetOption<bool>("Nekocore.WorldEliteScaling.ScaleXP", true);
     }
 
     uint32 BaselineForRank(uint32 rank)
@@ -150,6 +152,12 @@ public:
 
         abInfo->ScaledDamageMultiplier = multiplier;
         abInfo->ScaledManaMultiplier   = multiplier;
+        // Kill XP follows the health cut (read back in WorldEliteScaling_
+        // PlayerScript): a solo player against an elite at 40% health got the
+        // full elite reward for 40% of the work, which made world elites the
+        // best XP farm in the game. Never raised above the template reward --
+        // a large group already splits the kill between more players.
+        abInfo->XPModifier = std::min(multiplier, 1.0f);
 
         if (!abInfo->initialMaxHealth)
             abInfo->initialMaxHealth = creature->GetMaxHealth();
@@ -220,6 +228,28 @@ private:
     }
 };
 
+class WorldEliteScaling_PlayerScript : public PlayerScript
+{
+public:
+    WorldEliteScaling_PlayerScript() : PlayerScript("WorldEliteScaling_PlayerScript", { PLAYERHOOK_ON_GIVE_EXP }) { }
+
+    void OnPlayerGiveXP(Player* /*player*/, uint32& amount, Unit* victim, uint8 xpSource) override
+    {
+        if (!Enable || !ScaleXP || xpSource != XPSOURCE_KILL || !victim)
+            return;
+
+        // World maps only, for the same reason as ScaleOutgoingAmount: in a
+        // dungeon the struct is AutoBalance's, which scales XP itself.
+        Creature* creature = victim->ToCreature();
+        if (!creature || !creature->GetMap() || !creature->GetMap()->IsWorldMap())
+            return;
+
+        float modifier = creature->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo")->XPModifier;
+        if (modifier < 1.0f)
+            amount = uint32(amount * modifier);
+    }
+};
+
 class WorldEliteScaling_WorldScript : public WorldScript
 {
 public:
@@ -234,5 +264,6 @@ public:
 void AddSC_world_elite_scaling()
 {
     new WorldEliteScaling_UnitScript();
+    new WorldEliteScaling_PlayerScript();
     new WorldEliteScaling_WorldScript();
 }

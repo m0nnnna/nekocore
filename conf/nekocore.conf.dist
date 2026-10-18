@@ -79,6 +79,17 @@ Nekocore.WorldEliteScaling.BaselineWorldBoss = 15
 Nekocore.WorldEliteScaling.MinMultiplier = 0.4
 Nekocore.WorldEliteScaling.MaxMultiplier = 1.5
 
+# Nekocore.WorldEliteScaling.ScaleXP
+#
+#        Description: Scale a world elite's kill XP by the same multiplier as its health, so a
+#                      solo player who fought it at 40% health gets 40% of the XP. Only ever
+#                      lowers XP (a multiplier above 1 leaves the template reward alone).
+#
+#        Default:     1 - (Enabled)
+#                     0 - (Disabled)
+#
+Nekocore.WorldEliteScaling.ScaleXP = 1
+
 # Nekocore.EraXPRate.Vanilla
 # Nekocore.EraXPRate.TBC
 # Nekocore.EraXPRate.WotLK

@@ -218,14 +218,49 @@ ERA_SCRIPTS_ALONGSIDE = {"spell_era_dru_furor"}
 # ERA_SCRIPTS handler. Keyed by era and ORIGINAL spell id.
 ERA_KEEP_PROCS = {("TBC", 18213)}
 
+# Seal of Light and Seal of Wisdom, by ORIGINAL id. WotLK's are single-rank,
+# so its spell_proc and spell_script_names rows name them positively, which
+# on an era chain (Light r1-r4 in 1.12, r1-r5 in 2.4.3) is rank 1 only. And
+# its spell_proc rows were dropped anyway, since the era seal's effects
+# moved, which left every era rank on the DBC's ProcChance 100: a heal or a
+# mana return on every single melee hit. So these rows are cloned for the
+# whole chain (negative id), and spell_proc's at the era rate below.
+#
+# The 1.12 rate is classicmangos's 1.12.1 world DB, spell_proc_event
+# 20165/20166: 20 procs per minute, at most one per 3 s. 2.4.3's rows for
+# both seals and their procs are 1.12's unchanged, so TBC runs the same
+# rate; WotLK's 10/12 PPM belong to 3.0's reworked seals.
+ERA_SEAL_PROCS = {20165, 20166}
+ERA_SEAL_PROC_PPM = "20"
+ERA_SEAL_PROC_COOLDOWN_MS = "3000"
+
+# AzerothCore's "Blessings" spell_group: EXCLUSIVE_FROM_SAME_CASTER over the
+# per-blessing groups (Might, Wisdom, Kings, Sanctuary, ...), which is what
+# makes one paladin's blessings on a target replace each other. WotLK's
+# Hands are not in it -- 3.0 split them off, and the core keeps them apart
+# as SPELL_SPECIFIC_HAND, by the WotLK family bits the era copies carry.
+# But 1.12 and 2.4.3 Blessing of Protection, Freedom and Sacrifice were
+# Blessings like the others, and their tooltips say so: "Players may only
+# have one Blessing on them per Paladin at any one time." So does every
+# era Blessing and Greater Blessing, including the ones WotLK deleted and
+# this realm ports (Light, Salvation), which no WotLK group names. Every
+# era copy whose tooltip carries that line joins this group, by its chain
+# head; ones already in it through a cloned per-blessing group are left
+# where they are.
+WOTLK_BLESSINGS_GROUP = 1010
+SPELL_GROUP_STACK_RULE_EXCLUSIVE_FROM_SAME_CASTER = 2
+ERA_BLESSING_TEXT = "only have one Blessing on them per Paladin"
+SPELLFAMILY_PALADIN = 10
+
 
 def effect_layout(row: dict) -> tuple:
     return tuple((row[f"Effect_{i}"], row[f"EffectAura_{i}"]) for i in range(3))
 
 
-def load_clone_facts(spell_dbc: Path, maps: dict[str, dict[int, int]]) -> tuple[set[int], set[int]]:
+def load_clone_facts(spell_dbc: Path, maps: dict[str, dict[int, int]]) -> tuple[set[int], set[int], set[int]]:
     """(clones whose effect layout differs from the WotLK spell they were
-    cloned from, clones with no proc flags of their own).
+    cloned from, clones with no proc flags of their own, era Blessings --
+    see WOTLK_BLESSINGS_GROUP).
 
     Drives which proc rows are cloned. spell_proc/spell_proc_event rows are
     overrides of a spell's DBC proc data written for the WotLK spell's
@@ -248,7 +283,42 @@ def load_clone_facts(spell_dbc: Path, maps: dict[str, dict[int, int]]) -> tuple[
                 changed.add(clone)
             if not c["ProcTypeMask"]:
                 no_flags.add(clone)
-    return changed, no_flags
+    blessings = {clone for mapping in maps.values() for clone in mapping.values()
+                 if clone in rows and rows[clone]["SpellClassSet"] == SPELLFAMILY_PALADIN
+                 and ERA_BLESSING_TEXT in rows[clone]["Description_lang"]["enUS"]}
+    return changed, no_flags, blessings
+
+
+def emit_era_blessings(password: str, maps: dict[str, dict[int, int]], ported: dict[str, set[int]],
+                       blessings: set[int], heads: dict[int, int]) -> list[str]:
+    """spell_group rows putting each era Blessing in WOTLK_BLESSINGS_GROUP
+    (see there). Returns VALUES tuples for the spell_group INSERT."""
+    rule = mysql(f"SELECT stack_rule FROM acore_world.spell_group_stack_rules "
+                 f"WHERE group_id = {WOTLK_BLESSINGS_GROUP};", password)
+    if not rule or int(rule[0][0]) != SPELL_GROUP_STACK_RULE_EXCLUSIVE_FROM_SAME_CASTER:
+        raise SystemExit(f"error: spell_group {WOTLK_BLESSINGS_GROUP} is not the core's EXCLUSIVE_FROM_SAME_CASTER "
+                         f"Blessings group (stack rule {rule}); WOTLK_BLESSINGS_GROUP needs updating")
+    members: dict[int, set[int]] = {}
+    for group, spell in mysql("SELECT id, spell_id FROM acore_world.spell_group;", password):
+        members.setdefault(int(group), set()).add(int(spell))
+    covered: set[int] = set()  # WotLK spells already in the group, at any depth
+    pending, seen = [WOTLK_BLESSINGS_GROUP], set()
+    while pending:
+        group = pending.pop()
+        if group in seen:
+            continue
+        seen.add(group)
+        for spell in members.get(group, ()):
+            if spell < 0:
+                pending.append(-spell)
+            else:
+                covered.add(spell)
+    out = []
+    for era, mapping in maps.items():
+        cloned_in = {mapping[b] for b in covered if b in mapping and b not in ported.get(era, set())}
+        era_heads = {heads.get(c, c) for c in mapping.values() if c in blessings}
+        out += [f"({WOTLK_BLESSINGS_GROUP}, {h})" for h in sorted(era_heads - cloned_in)]
+    return out
 
 
 def load_script_mismatches(path: Path) -> set[tuple[int, str]]:
@@ -274,7 +344,7 @@ def load_script_mismatches(path: Path) -> set[tuple[int, str]]:
 
 
 def emit_spell_ranks(password: str, maps: dict[str, dict[int, int]], ported: dict[str, set[int]],
-                     supersede: dict[str, list[list[int]]]) -> tuple[list[str], int]:
+                     supersede: dict[str, list[list[int]]]) -> tuple[list[str], int, dict[int, int]]:
     """Rebuilds each era's rank chains from its own members, rather than
     copying WotLK's rows through the id map.
 
@@ -309,6 +379,7 @@ def emit_spell_ranks(password: str, maps: dict[str, dict[int, int]], ported: dic
     # Both kinds of link run from a lower rank to the next, so each era's
     # chains are the paths through the union of the two.
     values: list[str] = []
+    heads: dict[int, int] = {}  # era spell -> the head of its era chain
     emitted = 0
     for label, mapping in maps.items():
         skip = ported.get(label, set())
@@ -335,13 +406,14 @@ def emit_spell_ranks(password: str, maps: dict[str, dict[int, int]], ported: dic
             head = mapping[chain[0]]
             for rank, member in enumerate(chain, start=1):
                 values.append(f"({head}, {mapping[member]}, {rank})")
+                heads[mapping[member]] = head
                 emitted += 1
 
     for start in range(0, len(values), 500):
         lines.append("INSERT INTO `spell_ranks` (`first_spell_id`, `spell_id`, `rank`) VALUES")
         lines.append(",\n".join(values[start:start + 500]) + ";")
     lines.append("")
-    return lines, emitted
+    return lines, emitted, heads
 
 
 def emit_ported_spell_trainers(password: str, ported: dict[str, dict[str, dict]]) -> tuple[list[str], int, int, int]:
@@ -525,7 +597,7 @@ def main() -> int:
     ported = {era: {int(k) for k in m} for era, m in spell_map.get("ported", {}).items()}
     clone_maps = {era: {k: v for k, v in m.items() if k not in ported.get(era, set())}
                   for era, m in maps.items()}
-    layout_changed, no_proc_flags = load_clone_facts(args.spell_dbc, maps)
+    layout_changed, no_proc_flags, era_blessings = load_clone_facts(args.spell_dbc, maps)
     script_mismatches = load_script_mismatches(args.script_mismatches)
     # A clone with a hand-written handler does not also get WotLK's script:
     # the core binds both, and WotLK's spell_mage_cold_snap skips only its
@@ -537,6 +609,10 @@ def main() -> int:
     # own rule. An era that has them gets these INSTEAD of WotLK's rows.
     era_bonus: dict[str, dict[int, list[float]]] = {
         era: {int(k): v for k, v in rows.items()} for era, rows in spell_map.get("bonus", {}).items()}
+    # Era copies that take no spell power or attack power at all (Seal of
+    # Light/Wisdom's proc halves, build_era_spells.py seal_proc_halves): a
+    # zero row, in place of WotLK's and of the era rule's.
+    no_bonus: dict[str, set[int]] = {era: set(ids) for era, ids in spell_map.get("no_bonus", {}).items()}
     dropped: dict[str, int] = {}
 
     lines = [
@@ -555,7 +631,7 @@ def main() -> int:
             lines.append(f"DELETE FROM `{table}` WHERE `{key}` BETWEEN {lo} AND {hi};")
         lines.append("")
 
-    rank_lines, rank_rows = emit_spell_ranks(password, maps, ported, spell_map.get("supersede", {}))
+    rank_lines, rank_rows, rank_heads = emit_spell_ranks(password, maps, ported, spell_map.get("supersede", {}))
     lines.extend(rank_lines)
     print(f"  {'spell_ranks':26} rebuilt per era      -> {rank_rows:5} era row(s)", file=sys.stderr)
 
@@ -588,10 +664,11 @@ def main() -> int:
                 clone = mapping.get(base_key)
                 if clone is None:
                     continue  # this spell has no clone in this era
-                if table == "spell_bonus_data" and era in era_bonus:
+                if table == "spell_bonus_data" and (era in era_bonus or clone in no_bonus.get(era, set())):
                     dropped[table] = dropped.get(table, 0) + 1
                     continue
-                if table in PROC_TABLES:
+                seal_proc = table == "spell_proc" and base_key in ERA_SEAL_PROCS
+                if table in PROC_TABLES and not seal_proc:
                     flags_col = "ProcFlags" if table == "spell_proc" else "procFlags"
                     row_flags = int(row[cols.index(flags_col)]) if flags_col in cols else 0
                     kept = (era, base_key) in ERA_KEEP_PROCS
@@ -606,8 +683,11 @@ def main() -> int:
                 out_row = list(row)
                 for c in own_cols:
                     i = cols.index(c)
-                    negative = c in signed and int(row[i]) < 0
+                    negative = c in signed and (int(row[i]) < 0 or base_key in ERA_SEAL_PROCS)
                     out_row[i] = str(-clone if negative else clone)
+                if seal_proc:
+                    out_row[cols.index("ProcsPerMinute")] = ERA_SEAL_PROC_PPM
+                    out_row[cols.index("Cooldown")] = ERA_SEAL_PROC_COOLDOWN_MS
                 for c in ref_cols:
                     i = cols.index(c)
                     raw = int(row[i]) if row[i] not in ("NULL", "") else 0
@@ -624,6 +704,14 @@ def main() -> int:
                     values.append(f"({clone}, {direct}, {dot}, 0, {ap_dot}, "
                                   f"{sql_literal(era + ' coefficient (build_era_spells.py)')})")
                     emitted += 1
+            for era, clones in no_bonus.items():
+                for clone in sorted(clones):
+                    values.append(f"({clone}, 0, 0, 0, 0, {sql_literal(era + ' seal proc: flat, no bonus')})")
+                    emitted += 1
+        if table == "spell_group":
+            blessing_rows = emit_era_blessings(password, maps, ported, era_blessings, rank_heads)
+            values += blessing_rows
+            emitted += len(blessing_rows)
         if values:
             col_list = ", ".join("`" + c + "`" for c in cols)
             for chunk_start in range(0, len(values), 500):

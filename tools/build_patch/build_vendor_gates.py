@@ -18,11 +18,29 @@ Rule, against a real 1.12.1 server database (cMaNGOS classic-db):
 Vendors that do not exist in 1.12.1 (Outland, Northrend) are left alone: the
 zone itself is locked behind the same stages.
 
+Two more rules, which need no 1.12.1 database, close what the first one misses:
+  * Profession items. 1.12.1 ships placeholder rows for items it never sold
+    (every "Design: ..." Jewelcrafting plan, Jeweler's Kit), so "is it in the
+    1.12.1 item table" wrongly says they are classic. Anything that needs
+    Jewelcrafting (skill 755, TBC) or Inscription (773, WotLK) is gated at every
+    vendor that stands in Eastern Kingdoms / Kalimdor (map 0/1).
+  * Later-expansion vendors standing in the classic world (scribes, Pilgrim's
+    Bounty, Brewfest, arena/honor quartermasters, Caverns of Time...). They are
+    not in 1.12.1, so rule 1 skips them as "zone is locked", but their zone is
+    not locked. Every item they sell with id >= FIRST_TBC_ITEM is gated by id
+    (>= FIRST_WOTLK_ITEM -> WotLK, else TBC). Needs a 1.12.1 DB to also skip
+    items below the threshold that 1.12.1 had; without one the threshold alone
+    decides.
+
 Output: data/sql/db-world/base/zzz_nekocore_vendor_era_gates.sql, INSERT IGNORE
 so it is safe to re-run and never overrides the module's own choice.
+Without --classic-db only the two extra rules run (rule 1 needs the database) and
+the result goes to zzz_nekocore_vendor_era_gates_extra.sql; a run WITH --classic-db
+includes them in the main file and the extra file becomes redundant.
 
 Usage:
     python build_vendor_gates.py --classic-db D:\\wow-db\\1.12.1\\classicmangos.sqlite
+    python build_vendor_gates.py --container nkdb   # extra rules only (see above)
 """
 from __future__ import annotations
 
@@ -39,6 +57,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 STAGE_TBC = 66008     # PRE_TBC
 STAGE_WOTLK = 66013   # TBC_TIER_5, where WotLK content opens
 FIRST_WOTLK_ITEM = 35900
+FIRST_TBC_ITEM = 23000   # 1.12.1 item ids stop short of this; vendors new in TBC+ sell above it
+SKILL_JEWELCRAFTING = 755
+SKILL_INSCRIPTION = 773
+CLASSIC_MAPS = (0, 1)
 MARKER_RANGE = (66000, 66099)
 CONDITION_QUESTREWARDED = 8
 SOURCE_NPC_VENDOR = 23
@@ -55,15 +77,29 @@ def mysql(sql: str, container: str) -> list[list[str]]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--classic-db", required=True, type=Path)
+    ap.add_argument("--classic-db", type=Path, help="1.12.1 cMaNGOS sqlite; omit to run only the extra rules")
     ap.add_argument("--container", default="ac-database")
-    ap.add_argument("--out", type=Path,
-                    default=REPO_ROOT / "data" / "sql" / "db-world" / "base" / "zzz_nekocore_vendor_era_gates.sql")
+    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
+    base = REPO_ROOT / "data" / "sql" / "db-world" / "base"
+    if args.out is None:
+        args.out = base / ("zzz_nekocore_vendor_era_gates.sql" if args.classic_db
+                           else "zzz_nekocore_vendor_era_gates_extra.sql")
 
-    classic = sqlite3.connect(f"file:{args.classic_db.as_posix()}?mode=ro", uri=True)
-    classic_items = {r[0] for r in classic.execute("select entry from item_template")}
-    classic_creatures = {r[0] for r in classic.execute("select Entry from creature_template")}
+    if args.classic_db:
+        classic = sqlite3.connect(f"file:{args.classic_db.as_posix()}?mode=ro", uri=True)
+        classic_items = {r[0] for r in classic.execute("select entry from item_template")}
+        classic_creatures = {r[0] for r in classic.execute("select Entry from creature_template")}
+    else:
+        classic = None
+        classic_items, classic_creatures = set(), set()
+    classic_world_vendors = {int(r[0]) for r in mysql(
+        f"select distinct id from creature where map in ({','.join(map(str, CLASSIC_MAPS))});", args.container)}
+    profession_stage: dict[int, int] = {}
+    for item, skill, name in mysql("select entry, RequiredSkill, name from item_template "
+                                   f"where RequiredSkill in ({SKILL_JEWELCRAFTING}, {SKILL_INSCRIPTION}) "
+                                   "or name = 'Jeweler\\'s Kit';", args.container):
+        profession_stage[int(item)] = STAGE_WOTLK if int(skill) == SKILL_INSCRIPTION else STAGE_TBC
 
     vendor_rows = [(int(e), int(i)) for e, i in mysql("select entry, item from npc_vendor;", args.container)]
     gated_pairs = {(int(g), int(e)) for g, e in mysql(
@@ -81,7 +117,17 @@ def main() -> int:
 
     todo: list[tuple[int, int, int, str]] = []
     for vendor, item in sorted(set(vendor_rows)):
-        if vendor not in classic_creatures or item in classic_items or (vendor, item) in gated_pairs:
+        if (vendor, item) in gated_pairs:
+            continue
+        if vendor in classic_world_vendors and item in profession_stage:
+            todo.append((vendor, item, profession_stage[item], "profession introduced after Vanilla"))
+            continue
+        if vendor in classic_world_vendors and vendor not in classic_creatures and item >= FIRST_TBC_ITEM \
+                and item not in classic_items:
+            stage = item_stage.get(item) or (STAGE_WOTLK if item >= FIRST_WOTLK_ITEM else STAGE_TBC)
+            todo.append((vendor, item, stage, "later-expansion vendor in the classic world"))
+            continue
+        if not args.classic_db or vendor not in classic_creatures or item in classic_items:
             continue
         if item in item_stage:
             todo.append((vendor, item, item_stage[item], "same stage as this item at other vendors"))
@@ -91,7 +137,7 @@ def main() -> int:
 
     out = [
         "-- Later-expansion items hidden from classic vendors until their progression stage.",
-        "-- GENERATED by tools/build_patch/build_vendor_gates.py against a 1.12.1 server database.",
+        "-- GENERATED by tools/build_patch/build_vendor_gates.py" + ("" if args.classic_db else " (extra rules only, no 1.12.1 database)") + ".",
         "--",
         "-- mod-individual-progression gates vendor items with a QUESTREWARDED condition on",
         "-- marker quest 66000 + stage, but only for the vendor/item pairs its lists name. This",

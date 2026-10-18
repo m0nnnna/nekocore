@@ -19,6 +19,7 @@
 #include "SpellMgr.h"
 
 #include "EraTalents.h"
+#include "EraRecipeGates.generated.h"
 
 namespace NekoEraSpells
 {
@@ -102,6 +103,14 @@ namespace NekoEraSpells
             default:
                 return false;
         }
+    }
+
+    /// Profession recipes, ranks and perks (trainer-taught, riding, and
+    /// automatic skill-gain grants) that the era's client Spell.dbc lacks,
+    /// from EraRecipeGates.generated.h. Always false for a WotLK player.
+    inline bool IsRecipeAfterEra(Era era, uint32 spellId)
+    {
+        return era != ERA_WOTLK && IsRecipeMissingInEra(spellId, era == ERA_VANILLA);
     }
 
     /// The racial skill lines (Dwarven, Tauren, Orcish, Night Elf, Troll,

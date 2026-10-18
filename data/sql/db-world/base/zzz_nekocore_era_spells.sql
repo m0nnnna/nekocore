@@ -8672,7 +8672,23 @@ INSERT INTO `spell_bonus_data` (`entry`, `direct_bonus`, `dot_bonus`, `ap_bonus`
 (328382, 0.4286, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (329228, 0.1494, 0.1302, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
 (331016, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
-(331018, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)');
+(331018, 0.0, 0.0, 0, 0.0, 'Vanilla coefficient (build_era_spells.py)'),
+(320167, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320168, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320333, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320334, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320340, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320350, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(320351, 0, 0, 0, 0, 'Vanilla seal proc: flat, no bonus'),
+(420167, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420168, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420333, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420334, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420340, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420350, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(420351, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(427161, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus'),
+(427167, 0, 0, 0, 0, 'TBC seal proc: flat, no bonus');
 
 -- spell_proc
 DELETE FROM `spell_proc` WHERE ABS(`SpellId`) BETWEEN 300000 AND 399999;
@@ -8819,6 +8835,10 @@ INSERT INTO `spell_proc` (`SpellId`, `SchoolMask`, `SpellFamilyName`, `SpellFami
 ('417116', '0', '7', '268436065', '33554464', '32768', '0', '7', '1', '0', '8', '0', '0', '0', '0', '0'),
 ('318708', '0', '5', '536870912', '0', '0', '0', '0', '1', '0', '8', '0', '0', '0', '0', '0'),
 ('418708', '0', '5', '536870912', '0', '0', '0', '0', '1', '0', '8', '0', '0', '0', '0', '0'),
+('-320165', '0', '0', '0', '0', '0', '0', '1', '2', '0', '0', '0', '20', '0', '3000', '0'),
+('-420165', '0', '0', '0', '0', '0', '0', '1', '2', '0', '0', '0', '20', '0', '3000', '0'),
+('-320166', '0', '0', '0', '0', '0', '0', '1', '2', '0', '0', '0', '20', '0', '3000', '0'),
+('-420166', '0', '0', '0', '0', '0', '0', '1', '2', '0', '0', '0', '20', '0', '3000', '0'),
 ('320375', '0', '10', '0', '1474560', '0', '0', '1', '2', '0', '0', '0', '0', '0', '0', '0'),
 ('420375', '0', '10', '0', '1474560', '0', '0', '1', '2', '0', '0', '0', '0', '0', '0', '0'),
 ('320784', '0', '0', '0', '0', '0', '0', '1', '2', '2', '0', '0', '0', '0', '0', '0'),
@@ -9432,10 +9452,10 @@ INSERT INTO `spell_script_names` (`spell_id`, `ScriptName`) VALUES
 ('319943', 'isAllowedToCastSpell'),
 ('419943', 'isAllowedToCastSpell'),
 ('420154', 'spell_pal_seal_of_righteousness'),
-('320165', 'spell_pal_seal_of_light'),
-('420165', 'spell_pal_seal_of_light'),
-('320166', 'spell_pal_seal_of_light'),
-('420166', 'spell_pal_seal_of_light'),
+('-320165', 'spell_pal_seal_of_light'),
+('-420165', 'spell_pal_seal_of_light'),
+('-320166', 'spell_pal_seal_of_light'),
+('-420166', 'spell_pal_seal_of_light'),
 ('320230', 'spell_warr_retaliation'),
 ('420230', 'spell_warr_retaliation'),
 ('320375', 'spell_pal_seal_of_command'),
@@ -9801,7 +9821,21 @@ INSERT INTO `spell_group` (`id`, `spell_id`) VALUES
 ('1123', '310060'),
 ('1123', '410060'),
 ('1123', '312042'),
-('1123', '412042');
+('1123', '412042'),
+(1010, 301022),
+(1010, 301038),
+(1010, 301044),
+(1010, 306940),
+(1010, 319977),
+(1010, 325890),
+(1010, 325895),
+(1010, 401022),
+(1010, 401038),
+(1010, 401044),
+(1010, 406940),
+(1010, 419977),
+(1010, 425890),
+(1010, 425895);
 
 -- spell_linked_spell
 DELETE FROM `spell_linked_spell` WHERE ABS(`spell_trigger`) BETWEEN 300000 AND 399999;

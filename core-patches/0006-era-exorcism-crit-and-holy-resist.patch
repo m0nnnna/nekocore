@@ -1,0 +1,28 @@
+diff --git a/src/server/game/Entities/Unit/Unit.cpp b/src/server/game/Entities/Unit/Unit.cpp
+index 07d6d44f6..ed12042da 100644
+--- a/src/server/game/Entities/Unit/Unit.cpp
++++ b/src/server/game/Entities/Unit/Unit.cpp
+@@ -2338,7 +2338,11 @@ void Unit::CalcAbsorbResist(DamageInfo& dmgInfo, bool Splited, uint8 casterLevel
+     // Magic damage, check for resists
+     // Ignore spells that cant be resisted
+     // Xinef: holy resistance exists for npcs
+-    if (!(schoolMask & SPELL_SCHOOL_MASK_NORMAL) && (!(schoolMask & SPELL_SCHOOL_MASK_HOLY) || victim->IsCreature()) && (!spellInfo || (!spellInfo->HasAttribute(SPELL_ATTR0_CU_BINARY_SPELL) && !spellInfo->HasAttribute(SPELL_ATTR4_NO_CAST_LOG))))
++    // nekocore: not against a Vanilla-era player's Holy damage -- 1.12 never
++    // partially resisted Holy, on players or creatures.
++    bool const holyResistible = !(schoolMask & SPELL_SCHOOL_MASK_HOLY)
++        || (victim->IsCreature() && !(g_nekoUnitIsVanilla && g_nekoUnitIsVanilla(attacker)));
++    if (!(schoolMask & SPELL_SCHOOL_MASK_NORMAL) && holyResistible && (!spellInfo || (!spellInfo->HasAttribute(SPELL_ATTR0_CU_BINARY_SPELL) && !spellInfo->HasAttribute(SPELL_ATTR4_NO_CAST_LOG))))
+     {
+         float averageResist = Unit::GetEffectiveResistChance(attacker, schoolMask, victim, nullptr, casterLevel);
+ 
+@@ -9023,7 +9027,9 @@ float Unit::SpellTakenCritChance(Unit const* caster, SpellInfo const* spellProto
+                                 break;
+                             }
+                             // Exorcism
+-                            else if (spellProto->GetCategory() == 19)
++                            // nekocore: 3.0's guaranteed crit on undead and demons;
++                            // the Vanilla/TBC copies (300000-499999) roll normally.
++                            else if (spellProto->GetCategory() == 19 && spellProto->Id < 300000)
+                             {
+                                 if (GetCreatureTypeMask() & CREATURE_TYPEMASK_DEMON_OR_UNDEAD)
+                                     return 100.0f;

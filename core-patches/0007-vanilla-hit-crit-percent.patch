@@ -1,0 +1,184 @@
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index e18bb73cb..a78a06a0f 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -321,7 +321,10 @@ Player::Player(WorldSession* session): Unit(), m_mover(this), _cinematicMgr(*thi
+     }
+ 
+     for (uint8 i = 0; i < MAX_COMBAT_RATING; i++)
++    {
+         m_baseRatingValue[i] = 0;
++        m_nekoVanillaExcludedRating[i] = 0;
++    }
+ 
+     m_baseSpellPower = 0;
+     m_baseSpellDamage = 0;
+@@ -5346,10 +5349,19 @@ float Player::GetSpellCritFromIntellect()
+     return crit * 100.0f;
+ }
+ 
++uint32 (*g_nekoVanillaExcludedRatings)(SpellInfo const* spell, ItemTemplate const* item, SpellItemEnchantmentEntry const* enchant, uint32 ratingMask) = nullptr;
++
+ float Player::GetRatingMultiplier(CombatRating cr) const
+ {
+     uint8 level = GetLevel();
+ 
++    // nekocore: a Vanilla-era player's hit/crit rating is a 1.12 "+N%" bonus
++    // that 3.0 rewrote as rating at level 60's ratio (10 hit, 8 spell hit,
++    // 14 crit per 1%). Read it at that ratio at every level, so "+1%" stays
++    // 1% instead of growing as the gt table shrinks below 60.
++    if (cr >= CR_HIT_MELEE && cr <= CR_CRIT_SPELL && level < 60 && g_nekoUnitIsVanilla && g_nekoUnitIsVanilla(this))
++        level = 60;
++
+     if (level > GT_MAX_LEVEL)
+         level = GT_MAX_LEVEL;
+ 
+@@ -5457,6 +5469,14 @@ void Player::ApplyRatingMod(CombatRating cr, int32 value, bool apply)
+     UpdateRating(cr);
+ }
+ 
++void Player::ApplyEraRatingMod(CombatRating cr, int32 value, bool apply, uint32 excludedMask)
++{
++    // Before ApplyRatingMod, whose UpdateRating reads it.
++    if (excludedMask & (1 << cr))
++        m_nekoVanillaExcludedRating[cr] += (apply ? value : -value);
++    ApplyRatingMod(cr, value, apply);
++}
++
+ void Player::SetRegularAttackTime()
+ {
+     for (uint8 i = 0; i < MAX_ATTACK; ++i)
+@@ -6927,15 +6947,21 @@ void Player::_ApplyItemBonuses(ItemTemplate const* proto, uint8 slot, bool apply
+                 ApplyRatingMod(CR_HASTE_SPELL, int32(val), apply);
+                 break;
+             case ITEM_MOD_HIT_RATING:
+-                ApplyRatingMod(CR_HIT_MELEE, int32(val), apply);
+-                ApplyRatingMod(CR_HIT_RANGED, int32(val), apply);
+-                ApplyRatingMod(CR_HIT_SPELL, int32(val), apply);
++            {
++                uint32 const excluded = g_nekoVanillaExcludedRatings ? g_nekoVanillaExcludedRatings(nullptr, proto, nullptr, (1 << CR_HIT_MELEE) | (1 << CR_HIT_RANGED) | (1 << CR_HIT_SPELL)) : 0;
++                ApplyEraRatingMod(CR_HIT_MELEE, int32(val), apply, excluded);
++                ApplyEraRatingMod(CR_HIT_RANGED, int32(val), apply, excluded);
++                ApplyEraRatingMod(CR_HIT_SPELL, int32(val), apply, excluded);
+                 break;
++            }
+             case ITEM_MOD_CRIT_RATING:
+-                ApplyRatingMod(CR_CRIT_MELEE, int32(val), apply);
+-                ApplyRatingMod(CR_CRIT_RANGED, int32(val), apply);
+-                ApplyRatingMod(CR_CRIT_SPELL, int32(val), apply);
++            {
++                uint32 const excluded = g_nekoVanillaExcludedRatings ? g_nekoVanillaExcludedRatings(nullptr, proto, nullptr, (1 << CR_CRIT_MELEE) | (1 << CR_CRIT_RANGED) | (1 << CR_CRIT_SPELL)) : 0;
++                ApplyEraRatingMod(CR_CRIT_MELEE, int32(val), apply, excluded);
++                ApplyEraRatingMod(CR_CRIT_RANGED, int32(val), apply, excluded);
++                ApplyEraRatingMod(CR_CRIT_SPELL, int32(val), apply, excluded);
+                 break;
++            }
+             case ITEM_MOD_HIT_TAKEN_RATING:
+                 ApplyRatingMod(CR_HIT_TAKEN_MELEE, int32(val), apply);
+                 ApplyRatingMod(CR_HIT_TAKEN_RANGED, int32(val), apply);
+diff --git a/src/server/game/Entities/Player/Player.h b/src/server/game/Entities/Player/Player.h
+index d5f030e53..373c746d4 100644
+--- a/src/server/game/Entities/Player/Player.h
++++ b/src/server/game/Entities/Player/Player.h
+@@ -1082,6 +1082,16 @@ struct PendingSpellCastRequest
+         : spellId(spellId), category(category), requestPacket(std::move(packet)), isItem(item) , cancelInProgress(cancel) {}
+ };
+ 
++// nekocore: installed by the nekocore module (src/EraHitCrit.cpp). Given the
++// source of a combat-rating bonus -- exactly one of `spell` (a SPELL_AURA_MOD_RATING
++// aura), `item` (a generic hit/crit stat in item_template) or `enchant` (one in
++// SpellItemEnchantment) -- and the ratings it adds to (1 << CombatRating), returns
++// the subset that source's 1.12 form did not affect: 3.0 merged 1.12's separate
++// melee/ranged and spell hit/crit bonuses into one rating. The answer depends
++// only on the source, never on the player, so applying and removing a bonus
++// always agree. Null when the module is not loaded, which leaves stock behaviour.
++extern uint32 (*g_nekoVanillaExcludedRatings)(SpellInfo const* spell, ItemTemplate const* item, SpellItemEnchantmentEntry const* enchant, uint32 ratingMask);
++
+ class Player : public Unit, public GridObject<Player>
+ {
+     friend class WorldSession;
+@@ -1983,6 +1993,10 @@ public:
+     void ApplySpellHealingBonus(int32 amount, bool apply);
+     void UpdateSpellDamageAndHealingBonus();
+     void ApplyRatingMod(CombatRating cr, int32 value, bool apply);
++    // nekocore: ApplyRatingMod for a bonus whose 1.12 form did not affect the
++    // ratings in excludedMask (see g_nekoVanillaExcludedRatings). A Vanilla-era
++    // player's UpdateRating leaves that part out; other eras count all of it.
++    void ApplyEraRatingMod(CombatRating cr, int32 value, bool apply, uint32 excludedMask);
+     void UpdateRating(CombatRating cr);
+     void UpdateAllRatings();
+ 
+@@ -2884,6 +2898,7 @@ protected:
+     float m_auraBaseFlatMod[BASEMOD_END];
+     float m_auraBasePctMod[BASEMOD_END];
+     int32 m_baseRatingValue[MAX_COMBAT_RATING];
++    int32 m_nekoVanillaExcludedRating[MAX_COMBAT_RATING]; // nekocore: part of m_baseRatingValue a 1.12 source would not have given
+     uint32 m_baseSpellPower;
+     uint32 m_baseSpellDamage;
+     uint32 m_baseSpellHealing;
+diff --git a/src/server/game/Entities/Player/PlayerStorage.cpp b/src/server/game/Entities/Player/PlayerStorage.cpp
+index 2c39287cd..581458919 100644
+--- a/src/server/game/Entities/Player/PlayerStorage.cpp
++++ b/src/server/game/Entities/Player/PlayerStorage.cpp
+@@ -4650,17 +4650,23 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
+                             ApplyRatingMod(CR_HASTE_SPELL, enchant_amount, apply);
+                             break;
+                         case ITEM_MOD_HIT_RATING:
+-                            ApplyRatingMod(CR_HIT_MELEE, enchant_amount, apply);
+-                            ApplyRatingMod(CR_HIT_RANGED, enchant_amount, apply);
+-                            ApplyRatingMod(CR_HIT_SPELL, enchant_amount, apply);
++                        {
++                            uint32 const excluded = g_nekoVanillaExcludedRatings ? g_nekoVanillaExcludedRatings(nullptr, nullptr, pEnchant, (1 << CR_HIT_MELEE) | (1 << CR_HIT_RANGED) | (1 << CR_HIT_SPELL)) : 0;
++                            ApplyEraRatingMod(CR_HIT_MELEE, enchant_amount, apply, excluded);
++                            ApplyEraRatingMod(CR_HIT_RANGED, enchant_amount, apply, excluded);
++                            ApplyEraRatingMod(CR_HIT_SPELL, enchant_amount, apply, excluded);
+                             LOG_DEBUG("entities.player.items", "+ {} HIT", enchant_amount);
+                             break;
++                        }
+                         case ITEM_MOD_CRIT_RATING:
+-                            ApplyRatingMod(CR_CRIT_MELEE, enchant_amount, apply);
+-                            ApplyRatingMod(CR_CRIT_RANGED, enchant_amount, apply);
+-                            ApplyRatingMod(CR_CRIT_SPELL, enchant_amount, apply);
++                        {
++                            uint32 const excluded = g_nekoVanillaExcludedRatings ? g_nekoVanillaExcludedRatings(nullptr, nullptr, pEnchant, (1 << CR_CRIT_MELEE) | (1 << CR_CRIT_RANGED) | (1 << CR_CRIT_SPELL)) : 0;
++                            ApplyEraRatingMod(CR_CRIT_MELEE, enchant_amount, apply, excluded);
++                            ApplyEraRatingMod(CR_CRIT_RANGED, enchant_amount, apply, excluded);
++                            ApplyEraRatingMod(CR_CRIT_SPELL, enchant_amount, apply, excluded);
+                             LOG_DEBUG("entities.player.items", "+ {} CRITICAL", enchant_amount);
+                             break;
++                        }
+                             //                        Values ITEM_MOD_HIT_TAKEN_RATING and ITEM_MOD_CRIT_TAKEN_RATING are never used in Enchantment
+                             //                        case ITEM_MOD_HIT_TAKEN_RATING:
+                             //                            ApplyRatingMod(CR_HIT_TAKEN_MELEE, enchant_amount, apply);
+diff --git a/src/server/game/Entities/Player/PlayerUpdates.cpp b/src/server/game/Entities/Player/PlayerUpdates.cpp
+index b96b69483..c1d996739 100644
+--- a/src/server/game/Entities/Player/PlayerUpdates.cpp
++++ b/src/server/game/Entities/Player/PlayerUpdates.cpp
+@@ -623,6 +623,10 @@ void Player::UpdateRating(CombatRating cr)
+         if ((*i)->GetMiscValue() & (1 << cr))
+             amount += int32(CalculatePct(GetStat(Stats((*i)->GetMiscValueB())),
+                                          (*i)->GetAmount()));
++    // nekocore: a Vanilla-era player does not get the part a 1.12 source did
++    // not give (melee "+1% crit" counting for spells, and vice versa).
++    if (m_nekoVanillaExcludedRating[cr] && g_nekoUnitIsVanilla && g_nekoUnitIsVanilla(this))
++        amount -= m_nekoVanillaExcludedRating[cr];
+     if (amount < 0)
+         amount = 0;
+     SetUInt32Value(static_cast<uint16>(PLAYER_FIELD_COMBAT_RATING_1) + static_cast<uint16>(cr), uint32(amount));
+diff --git a/src/server/game/Spells/Auras/SpellAuraEffects.cpp b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+index d6887290d..c7fd16b2b 100644
+--- a/src/server/game/Spells/Auras/SpellAuraEffects.cpp
++++ b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+@@ -4867,9 +4867,11 @@ void AuraEffect::HandleModRating(AuraApplication const* aurApp, uint8 mode, bool
+     if (!target->IsPlayer())
+         return;
+ 
++    // nekocore: which of these ratings this spell's 1.12 form left alone.
++    uint32 const excluded = g_nekoVanillaExcludedRatings ? g_nekoVanillaExcludedRatings(GetSpellInfo(), nullptr, nullptr, uint32(GetMiscValue())) : 0;
+     for (uint8 rating = 0; rating < MAX_COMBAT_RATING; ++rating)
+         if (GetMiscValue() & (1 << rating))
+-            target->ToPlayer()->ApplyRatingMod(CombatRating(rating), GetAmount(), apply);
++            target->ToPlayer()->ApplyEraRatingMod(CombatRating(rating), GetAmount(), apply, excluded);
+ }
+ 
+ void AuraEffect::HandleModRatingFromStat(AuraApplication const* aurApp, uint8 mode, bool apply) const

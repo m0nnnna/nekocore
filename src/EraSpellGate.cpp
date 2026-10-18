@@ -86,6 +86,11 @@ namespace
         if (spellEra != ERA_WOTLK)
             return spellEra != playerEra;
 
+        // Profession recipes and ranks the era's client never had
+        // (63746 Enchant Boots - Lesser Accuracy for a Vanilla character).
+        if (IsRecipeAfterEra(playerEra, spellId))
+            return true;
+
         // A WotLK id. Hide it only when this era stocks its own copy --
         // profession, riding and class spells that never changed have no
         // copy and must stay visible.
@@ -171,7 +176,8 @@ public:
         }
 
         if (playerEra != ERA_WOTLK
-            && (IsWotlkOnlyProfessionPerk(spellId) || IsRacialAddedAfterEra(player, playerEra, spellId)))
+            && (IsWotlkOnlyProfessionPerk(spellId) || IsRecipeAfterEra(playerEra, spellId)
+                || IsRacialAddedAfterEra(player, playerEra, spellId)))
             return false;
 
         if (inSubstitution || playerEra == ERA_WOTLK || IsTalentRankSpell(spellId))
