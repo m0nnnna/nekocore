@@ -6,7 +6,7 @@ the realm box updates itself with one command, `nekocore`:
 ```
 dev box ── git push master ──> GitHub Actions ──> images :edge + "edge" prerelease
         ── nekocore publish v1.2.3 ──> tag ──> images :v1.2.3/:stable + release v1.2.3
-        └─ (same command) game data ──> private repo m0nnnna/nekocore-data, release v1.2.3 / edge
+        └─ (same command) game data ──> public repo m0nnnna/nekocore-data, release v1.2.3 / edge
 
 realm box ── nekocore update [--edge] ──> pulls all of it, backs up, swaps, checks, rolls back on failure
 ```
@@ -17,8 +17,8 @@ realm box ── nekocore update [--edge] ──> pulls all of it, backs up, swa
 |---|---|---|
 | worldserver / authserver / db-import / website images | GitHub Actions, from a clean checkout | `ghcr.io/m0nnnna/nekocore-*` (`:edge`, `:sha-<commit>`, `:v1.2.3`, `:stable`) |
 | runtime bundle: compose files, server and module confs, Lua scripts, module SQL, ops scripts, `nekocore` itself | GitHub Actions | `nekocore-runtime.tar.gz` on the release |
-| game data: the generated DBCs, mod-individual-progression's optional DBCs, the player patch zip | the dev box (needs the game client) | `nekocore-gamedata.tar.gz` on the **private** `m0nnnna/nekocore-data` release of the same tag |
-| `acore_world` (the dev box owns it, see `deploy.md`) | the dev box, `--world` | `acore_world.sql.gz` on the same private release |
+| game data: the generated DBCs, mod-individual-progression's optional DBCs, the player patch zip | the dev box (needs the game client) | `nekocore-gamedata.tar.gz` on the `m0nnnna/nekocore-data` release of the same tag |
+| `acore_world` (the dev box owns it, see `deploy.md`) | the dev box, `--world` | `acore_world.sql.gz` on the same release |
 | accounts, characters, the box's passwords | the realm box | stay on the realm box (`backups/`, `server/.env`, `website/docker.env`, `nekocore.env`) |
 
 The game data never goes on GitHub's build machines or in the public repo:
@@ -49,7 +49,7 @@ ones faster). Watch it with `gh run watch`.
 **Edge game data:** after rebuilding the DBCs/patch (`install_client.py`), run:
 
 ```bash
-bin/nekocore publish --edge           # DBCs + patch -> the private "edge" release
+bin/nekocore publish --edge           # DBCs + patch -> the data repo's "edge" release
 bin/nekocore publish --edge --world   # ... and the world DB from the running dev realm
 ```
 
@@ -71,7 +71,7 @@ That way the release is what you tested. Leave `--world` out when the world DB
 didn't change; the box keeps its own. `--notes FILE` uses your own tag message
 for the release notes.
 
-`publish` creates the private `m0nnnna/nekocore-data` repository on first use.
+`publish` creates the `m0nnnna/nekocore-data` repository on first use.
 
 ## Realm box
 
@@ -81,8 +81,8 @@ Settings live in `/opt/nekocore/nekocore.env`:
 NEKOCORE_REPO=m0nnnna/nekocore
 NEKOCORE_DATA_REPO=m0nnnna/nekocore-data
 NEKOCORE_CHANNEL=stable              # what a bare `nekocore update` follows
-GITHUB_TOKEN=github_pat_...          # fine-grained token, read-only "Contents" on nekocore-data
-                                     # (and on nekocore while that is private); also used for ghcr.io
+GITHUB_TOKEN=github_pat_...          # optional: everything is public; a token only lifts
+                                     # GitHub's anonymous API rate limit (60 requests/hour)
 BACKUP_KEEP=48                       # dumps kept per database
 NEKOCORE_TOTP_SECRET=...             # filled in by the first update from the old worldserver.conf
 ```
@@ -135,10 +135,6 @@ The box installed from the drive already has everything `nekocore` needs:
 scp bin/nekocore realmbox:/opt/nekocore/bin/nekocore     # or download it from the release
 # on the realm box:
 apk add curl                                             # Alpine; docker + compose are there already
-cat >> /opt/nekocore/nekocore.env <<EOF
-GITHUB_TOKEN=github_pat_...
-EOF
-chmod 600 /opt/nekocore/nekocore.env
 /opt/nekocore/bin/nekocore update --no-world    # or --edge
 ```
 
@@ -172,7 +168,7 @@ to.
 ```bash
 # docker, compose v2 and curl installed; as the user that runs the realm:
 curl -fsSLo /tmp/nekocore https://raw.githubusercontent.com/m0nnnna/nekocore/master/bin/nekocore
-GITHUB_TOKEN=github_pat_... sh /tmp/nekocore install     # writes /opt/nekocore, a random DB password
+sh /tmp/nekocore install     # writes /opt/nekocore, a random DB password
 # edit server/.env (REALM_*), website/docker.env, then:
 /opt/nekocore/bin/nekocore update --force --yes
 ```
@@ -189,7 +185,8 @@ switching the repository to public:
 - In the GitHub package settings, set the four `nekocore-*` packages to
   public too (otherwise boxes need `GITHUB_TOKEN` to pull them, which works
   but isn't needed).
-- `m0nnnna/nekocore-data` stays private.
+- `m0nnnna/nekocore-data` is public too (the DBCs and the player patch are
+  modified game files; they come down if Blizzard asks).
 
 Older commits still mention the addresses that are now in `.env` (the public
 VPS IP and LAN addresses). History was not rewritten.

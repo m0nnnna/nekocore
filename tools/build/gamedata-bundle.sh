@@ -9,7 +9,7 @@
 #   tools/build/gamedata-bundle.sh OUT_DIR           -> nekocore-gamedata.tar.gz
 #   WORLD=1 tools/build/gamedata-bundle.sh OUT_DIR   ... + acore_world.sql.gz
 #
-# `nekocore publish` runs it and uploads the result to the private data
+# `nekocore publish` runs it and uploads the result to the data
 # repository's release; `nekocore update` on the realm box fetches it.
 set -eu
 REPO=$(cd "$(dirname "$0")/../.." && pwd)

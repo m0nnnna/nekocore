@@ -28,7 +28,7 @@
 # Dev box (inside a nekocore git checkout, needs gh):
 #   nekocore build                  prepare server/ and build the images (:local)
 #   nekocore publish v1.2.3 [--world] [--notes FILE] [--draft]
-#                                   game data -> private release, tag -> GitHub
+#                                   game data -> data-repo release, tag -> GitHub
 #                                   Actions builds and publishes the release
 #   nekocore publish --edge [--world]
 #                                   game data for edge boxes (code edge = master)
@@ -129,11 +129,12 @@ confirm() { # question; --yes or a non-tty answers no unless YES=1
 
 gh_api() { # path -> JSON on stdout; fails on HTTP errors
     have curl || die "curl not installed (Alpine: apk add curl)"
-    if [ -n "$TOKEN" ]; then
-        curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
-    else
-        curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
+    # Both repositories are public, so a token is optional. A stale or
+    # mistyped one must not hide a release: retry without it.
+    if [ -n "$TOKEN" ] && curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/$1"; then
+        return 0
     fi
+    curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/$1"
 }
 json_str() { # key < json -> first "key": "value"
     sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" | head -1
@@ -147,11 +148,10 @@ json_assets() {
 }
 asset_url() { printf '%s\n' "$1" | json_assets | awk -F'\t' -v n="$2" '$1==n{print $2; exit}'; }
 download() { # api-url dest
-    if [ -n "$TOKEN" ]; then
-        curl -fSL --retry 3 -o "$2" -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$1"
-    else
-        curl -fSL --retry 3 -o "$2" -H "Accept: application/octet-stream" "$1"
+    if [ -n "$TOKEN" ] && curl -fsSL --retry 3 -o "$2" -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$1"; then
+        return 0
     fi
+    curl -fSL --retry 3 -o "$2" -H "Accept: application/octet-stream" "$1"
 }
 fetch_asset() { # release-json name dir -> dir/name, checked against name.sha256 if the release has one
     u=$(asset_url "$1" "$2"); [ -n "$u" ] || return 1
@@ -391,20 +391,17 @@ cmd_update() {
     W="$H/.update"; rm -rf "$W"; mkdir -p "$W"
     say "downloading $REL_TAG ($(printf '%.12s' "$REL_COMMIT"))"
     fetch_asset "$REL_JSON" nekocore-runtime.tar.gz "$W" || die "release $REL_TAG has no nekocore-runtime.tar.gz (still building? see the Actions tab)"
-    DATA_JSON=""
-    if [ -n "$TOKEN" ]; then
-        DATA_JSON=$(gh_api "repos/$DATA_SLUG/releases/tags/$REL_TAG" 2>/dev/null || true)
-    fi
-    if [ -n "$DATA_JSON" ]; then
-        fetch_asset "$DATA_JSON" nekocore-gamedata.tar.gz "$W" || warn "data release $REL_TAG has no nekocore-gamedata.tar.gz: keeping this box's game data"
-        if [ $NOWORLD = 0 ] && [ -n "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" ]; then
-            ws=$(download "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" /dev/stdout 2>/dev/null | cut -d' ' -f1)
-            if [ "$ws" != "$(cat "$H/.world-sha256" 2>/dev/null || true)" ]; then
-                fetch_asset "$DATA_JSON" acore_world.sql.gz "$W"
-            fi
+    # The code and the DBCs must come from the same release: new code on old
+    # DBCs learns era spells the server's Spell.dbc doesn't have, and
+    # characters lose them (v1.0.0's first install dropped every era racial).
+    DATA_JSON=$(gh_api "repos/$DATA_SLUG/releases/tags/$REL_TAG" 2>/dev/null || true)
+    [ -n "$DATA_JSON" ] || die "no game data for $REL_TAG on $DATA_SLUG (not published yet? 'nekocore publish' on the dev box): nothing changed"
+    fetch_asset "$DATA_JSON" nekocore-gamedata.tar.gz "$W" || die "data release $REL_TAG has no nekocore-gamedata.tar.gz: nothing changed"
+    if [ $NOWORLD = 0 ] && [ -n "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" ]; then
+        ws=$(download "$(asset_url "$DATA_JSON" acore_world.sql.gz.sha256)" /dev/stdout 2>/dev/null | cut -d' ' -f1)
+        if [ "$ws" != "$(cat "$H/.world-sha256" 2>/dev/null || true)" ]; then
+            fetch_asset "$DATA_JSON" acore_world.sql.gz "$W"
         fi
-    else
-        warn "no game data for $REL_TAG on $DATA_SLUG (${TOKEN:+not published}${TOKEN:-GITHUB_TOKEN not set}): keeping this box's DBCs, patch and world DB"
     fi
 
     say "pulling images $IMAGES-*:$IMG_TAG"
@@ -524,7 +521,7 @@ cmd_install() {
 Install prepared at $H. Before the first start:
   1. edit $S/.env       REALM_ADDRESS (public IP players get), REALM_LOCAL_ADDRESS, ...
   2. edit $H/website/docker.env   (mail settings)
-  3. set GITHUB_TOKEN in $CONF (read access to $DATA_SLUG) for the game data
+  3. (optional) GITHUB_TOKEN in $CONF: only to avoid GitHub's anonymous API rate limit
   4. client data (maps/vmaps/mmaps/dbc, 3 GB): copy an existing
      server/env/dist/data here, or let ac-client-data-init download it
 Then: $H/bin/nekocore update --force --yes
@@ -550,9 +547,9 @@ cmd_build() {
 
 ensure_data_repo() {
     gh repo view "$DATA_SLUG" >/dev/null 2>&1 && return 0
-    say "creating the private data repository $DATA_SLUG"
+    say "creating the data repository $DATA_SLUG"
     # --add-readme: a release needs a commit to tag, and a new repo has none.
-    gh repo create "$DATA_SLUG" --private --add-readme --description "NekoCore game data releases (private: built from the game client)" >/dev/null
+    gh repo create "$DATA_SLUG" --public --add-readme --description "NekoCore game data releases (DBCs and client patch)" >/dev/null
 }
 
 upload_data() { # tag outdir prerelease(0/1)
@@ -622,7 +619,8 @@ cmd_publish() {
 # -----------------------------------------------------------------------------
 
 YES=${YES:-0}
-cmd=${1:-help}; [ $# -gt 0 ] && shift
+# tr: a command pasted from a Windows terminal arrives as "status\r".
+cmd=$(printf '%s' "${1:-help}" | tr -d '\r'); [ $# -gt 0 ] && shift
 for a in "$@"; do case "$a" in --yes|-y) YES=1 ;; esac; done
 case "$cmd" in
     status) cmd_status ;;
