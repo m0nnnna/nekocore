@@ -91,6 +91,7 @@ NEKOCORE_TOTP_SECRET=...             # filled in by the first update from the ol
 nekocore status                  # version, channel, images, players online, last backup
 nekocore update                  # newest stable release
 nekocore update --edge           # newest master build
+nekocore-update [--edge]         # the same; update links both into /usr/local/bin
 nekocore update --check          # exit 10 = an update is waiting
 nekocore rollback                # back to what ran before the last update (files + images)
 nekocore channel edge            # make bare `update` follow edge

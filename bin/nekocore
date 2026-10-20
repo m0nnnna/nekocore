@@ -8,6 +8,7 @@
 #   nekocore update                 newest stable release (GitHub releases)
 #   nekocore update --edge          newest build of master
 #   nekocore update --version v1.2  one release in particular
+#   nekocore-update [--edge ...]    the same as `nekocore update`
 #       --check      only say whether there is one (exit 10 = update waiting)
 #       --yes        don't ask, even with players online
 #       --no-world   keep acore_world even if the release ships a new dump
@@ -168,6 +169,18 @@ fetch_asset() { # release-json name dir -> dir/name, checked against name.sha256
 installed_version() { v=$(cat "$H/VERSION" 2>/dev/null || true); echo "${v:-none (installed from a deploy drop)}"; }
 installed_commit() { cat "$H/COMMIT" 2>/dev/null || true; }
 channel() { c=$(conf NEKOCORE_CHANNEL stable); echo "$c"; }
+
+# nekocore and nekocore-update in /usr/local/bin, like ultimit-update.
+link_commands() {
+    for n in nekocore nekocore-update; do
+        [ "$(readlink "/usr/local/bin/$n" 2>/dev/null)" = "$H/bin/nekocore" ] && continue
+        if ln -sfn "$H/bin/nekocore" "/usr/local/bin/$n" 2>/dev/null; then
+            say "linked /usr/local/bin/$n"
+        else
+            warn "can't write /usr/local/bin; as root: ln -sf $H/bin/nekocore /usr/local/bin/$n"
+        fi
+    done
+}
 
 cmd_status() {
     need_box
@@ -367,6 +380,7 @@ cmd_update() {
         shift
     done
     need_box
+    [ $CHECK = 1 ] || link_commands
     resolve_release
     # Edge is the same tag every time; what moved is the commit.
     if [ "$REL_TAG" = edge ]; then
@@ -517,6 +531,7 @@ cmd_install() {
     cp "$W/nekocore/bin/nekocore" "$H/bin/nekocore"
     printf 'none\n' > "$H/VERSION"
     rm -rf "$W"
+    link_commands
     cat <<EOF
 Install prepared at $H. Before the first start:
   1. edit $S/.env       REALM_ADDRESS (public IP players get), REALM_LOCAL_ADDRESS, ...
@@ -620,6 +635,8 @@ cmd_publish() {
 
 YES=${YES:-0}
 # tr: a command pasted from a Windows terminal arrives as "status\r".
+# Called through the nekocore-update link: the same as `nekocore update`.
+case "$(basename "$0")" in nekocore-update) set -- update "$@" ;; esac
 cmd=$(printf '%s' "${1:-help}" | tr -d '\r'); [ $# -gt 0 ] && shift
 for a in "$@"; do case "$a" in --yes|-y) YES=1 ;; esac; done
 case "$cmd" in
