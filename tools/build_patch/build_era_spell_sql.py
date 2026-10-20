@@ -234,6 +234,23 @@ ERA_SEAL_PROCS = {20165, 20166}
 ERA_SEAL_PROC_PPM = "20"
 ERA_SEAL_PROC_COOLDOWN_MS = "3000"
 
+# Era copies whose spell_proc row is written here in place of WotLK's, to
+# hold the one thing the era's DBC proc data cannot say: which hits count.
+# Keyed by era and ORIGINAL spell id -> HitMask; every other column is left
+# to the DBC. Redoubt (build_era_spells.py ERA_TALENT_PROC_IDS): 1.12 fired
+# "after being the victim of a critical strike", a rule its core hardcoded,
+# so without a row it fired on every hit. 2.4.3's is a 10% chance on any
+# hit, which the DBC already says. Its block buffs lose a charge per block,
+# as WotLK's 20128's row says; the buffs WotLK deleted had no row at all.
+PROC_HIT_CRITICAL = 0x2
+PROC_HIT_BLOCK = 0x40
+REDOUBT_TALENT = (20127, 20130, 20135, 20136, 20137)
+REDOUBT_BUFF = (20128, 20131, 20132, 20133, 20134)
+ERA_HIT_PROCS = {
+    **{("Vanilla", s): PROC_HIT_CRITICAL for s in REDOUBT_TALENT},
+    **{(era, s): PROC_HIT_BLOCK for era in ("Vanilla", "TBC") for s in REDOUBT_BUFF},
+}
+
 # AzerothCore's "Blessings" spell_group: EXCLUSIVE_FROM_SAME_CASTER over the
 # per-blessing groups (Might, Wisdom, Kings, Sanctuary, ...), which is what
 # makes one paladin's blessings on a target replace each other. WotLK's
@@ -543,9 +560,12 @@ def _unescape_batch(field: str) -> str:
     return "".join(out)
 
 
+CONTAINER = "ac-database"  # --container
+
+
 def mysql(sql: str, password: str) -> list[list[str]]:
     out = subprocess.run(
-        ["docker", "exec", "-e", f"MYSQL_PWD={password}", "ac-database",
+        ["docker", "exec", "-e", f"MYSQL_PWD={password}", CONTAINER,
          "mysql", "-uroot", "-N", "--batch", "-e", sql],
         capture_output=True, text=True, check=True).stdout
     rows = []
@@ -573,7 +593,10 @@ def main() -> int:
                     help="build_era_spells.py's Spell.dbc -- read to tell which clones' effects changed")
     ap.add_argument("--script-mismatches", type=Path, default=Path("data/generated/era-script-mismatches.txt"),
                     help="tools/server/dump_era_script_mismatches.sh output")
+    ap.add_argument("--container", default="ac-database", help="the MySQL container holding acore_world")
     args = ap.parse_args()
+    global CONTAINER
+    CONTAINER = args.container
 
     password = ""
     for line in args.env_file.read_text().splitlines():
@@ -667,6 +690,9 @@ def main() -> int:
                 if table == "spell_bonus_data" and (era in era_bonus or clone in no_bonus.get(era, set())):
                     dropped[table] = dropped.get(table, 0) + 1
                     continue
+                if table == "spell_proc" and (era, base_key) in ERA_HIT_PROCS:
+                    dropped[table] = dropped.get(table, 0) + 1
+                    continue
                 seal_proc = table == "spell_proc" and base_key in ERA_SEAL_PROCS
                 if table in PROC_TABLES and not seal_proc:
                     flags_col = "ProcFlags" if table == "spell_proc" else "procFlags"
@@ -708,6 +734,16 @@ def main() -> int:
                 for clone in sorted(clones):
                     values.append(f"({clone}, 0, 0, 0, 0, {sql_literal(era + ' seal proc: flat, no bonus')})")
                     emitted += 1
+        if table == "spell_proc":
+            for (era, base), hit_mask in sorted(ERA_HIT_PROCS.items()):
+                clone = maps.get(era, {}).get(base)
+                if clone is None:
+                    continue
+                out_row = ["0"] * len(cols)
+                out_row[cols.index("SpellId")] = str(clone)
+                out_row[cols.index("HitMask")] = str(hit_mask)
+                values.append("(" + ", ".join(out_row) + ")")
+                emitted += 1
         if table == "spell_group":
             blessing_rows = emit_era_blessings(password, maps, ported, era_blessings, rank_heads)
             values += blessing_rows

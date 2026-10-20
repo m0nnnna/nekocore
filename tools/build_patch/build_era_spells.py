@@ -821,6 +821,34 @@ def seal_proc_halves(spell_ids, era_by_id: dict[int, dict]) -> dict[int, tuple[i
     return out
 
 
+# Paladin talents whose proc buff WotLK rewrote or deleted. Redoubt in 1.12
+# and 2.4.3 is five ranks, each triggering its own block buff: 20128, 20131,
+# 20132, 20133, 20134 at 6/12/18/24/30%. WotLK kept three ranks and rewrote
+# the first three buffs in place to 10/20/30%, and deleted the last two. The
+# era clones still named the shared ids, so ranks 1-3 gave WotLK's numbers
+# and ranks 4-5 triggered nothing and printed "$20133s1" raw. Each buff gets
+# an era copy the talent clone points at, like the seal procs above. The
+# Vanilla crit-only rule lives in build_era_spell_sql.py's ERA_HIT_PROCS.
+# By id: the era rows carry no spell family. Redoubt r1-r5.
+ERA_TALENT_PROC_IDS = {20127, 20130, 20135, 20136, 20137}
+
+
+def talent_proc_buffs(spell_ids, era_by_id: dict[int, dict]) -> dict[int, tuple[int, int]]:
+    """{talent rank id: (effect index, buff id)} for the ERA_TALENT_PROC_IDS
+    among spell_ids, same shape as seal_proc_halves."""
+    out: dict[int, tuple[int, int]] = {}
+    for spell_id in spell_ids:
+        row = era_by_id.get(spell_id)
+        if row is None or spell_id not in ERA_TALENT_PROC_IDS:
+            continue
+        for i in range(3):
+            proc = row[f"EffectTriggerSpell_{i}"]
+            if (row[f"Effect_{i}"] == SPELL_EFFECT_APPLY_AURA and row[f"EffectAura_{i}"] == SPELL_AURA_PROC_TRIGGER_SPELL
+                    and proc in era_by_id):
+                out[spell_id] = (i, proc)
+    return out
+
+
 def remap_seal_procs(rows: list[dict], offset: int, era_ids: dict[int, int],
                      procs: dict[int, tuple[int, int]]) -> list[int]:
     """Points each seal clone's proc trigger at its proc half's era copy (see
@@ -847,10 +875,12 @@ def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
         Crusader cast the WotLK talent debuff. Vanilla Judgement of Command
         is itself a dummy naming its damage spell, so that is followed too.
       * Seal of Light's and Seal of Wisdom's proc halves (seal_proc_halves).
+      * Redoubt's block buffs (talent_proc_buffs).
       * Forbearance, which lasts 1 minute in both eras and 2 in WotLK. The
         era immunity handler applies the era's copy.
     """
     out: set[int] = {proc for _, proc in seal_proc_halves(wanted, era_by_id).values()}
+    out |= {proc for _, proc in talent_proc_buffs(wanted, era_by_id).values()}
 
     def named(row: dict, i: int) -> int:
         return row[f"EffectBasePoints_{i}"] + 1
@@ -1499,6 +1529,10 @@ def main() -> int:
             era_no_bonus[label] = sorted({seal_era_ids[p] for _, p in era_procs.values() if p in seal_era_ids})
             print(f"[{label}] pointed {len(repointed)} seal(s) at this era's copy of their proc "
                   f"(flat, no spell power): {repointed}", file=sys.stderr)
+            repointed = remap_seal_procs(new_rows[era_rows_start:], offset, seal_era_ids,
+                                         talent_proc_buffs(wanted, era_by_id))
+            print(f"[{label}] pointed {len(repointed)} talent rank(s) at this era's copy of their buff: "
+                  f"{repointed}", file=sys.stderr)
 
             # Transitive port: a clone can point at a spell WotLK deleted
             # (Vanilla Lightning Shield triggers 26545, Execute triggers
