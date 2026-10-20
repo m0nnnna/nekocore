@@ -849,6 +849,65 @@ def talent_proc_buffs(spell_ids, era_by_id: dict[int, dict]) -> dict[int, tuple[
     return out
 
 
+# Judgement of Light / Wisdom. The era debuff is a PROC_TRIGGER_SPELL aura
+# whose trigger is a bare DUMMY, 5373 "Judgement of Light Intermediate" or
+# 1826 "Judgement of Wisdom Intermediate" (2.4.3 has no row for either). The
+# 1.12/2.4.3 cores hardcoded the rest in Unit::HandleProcTriggerSpell: on a
+# proc the ATTACKER cast the rank's heal or mana spell on itself, the rank's
+# own id picked by a switch (20185->20267, 20344->20341, 20345->20342,
+# 20346->20343, 27162->27163; 20186->20268, 20354->20352, 20355->20353,
+# 27164->27165). AzerothCore has no handler for either dummy, so the debuffs
+# did nothing at all. The rank's proc spell is the one its own tooltip names
+# ("...healed for $20341s1"), which is the same table; each gets an era copy,
+# the debuff's clone triggers that copy, and spell_era_pal_judgement_of_
+# light_wisdom (src/EraSpellScripts.cpp) has the attacker cast it on itself.
+# Flat, like seal_proc_halves: listed in "no_bonus".
+ERA_JUDGEMENT_PROC_TOKEN = re.compile(r"\$(\d+)s1")
+SPELL_EFFECT_ENERGIZE = 30
+
+
+def judgement_procs(spell_ids, era_by_id: dict[int, dict]) -> dict[int, tuple[int, int, int]]:
+    """{judgement debuff id: (effect index, dummy trigger id, proc spell id)}
+    for the Light/Wisdom ranks among spell_ids (see ERA_JUDGEMENT_PROC_TOKEN)."""
+    out: dict[int, tuple[int, int, int]] = {}
+    for spell_id in spell_ids:
+        row = era_by_id.get(spell_id)
+        if row is None or row["SpellClassSet"] != SPELLFAMILY_PALADIN \
+                or not row["Name_lang"]["enUS"].startswith("Judgement of"):
+            continue
+        tokens = ERA_JUDGEMENT_PROC_TOKEN.findall(row["AuraDescription_lang"]["enUS"] or "")
+        if len(tokens) != 1:
+            continue
+        proc = era_by_id.get(int(tokens[0]))
+        if proc is None or proc["Effect_0"] not in (SPELL_EFFECT_HEAL, SPELL_EFFECT_ENERGIZE) \
+                or proc["ImplicitTargetA_0"] != 1:  # TARGET_UNIT_CASTER: the attacker
+            continue
+        for i in range(3):
+            trigger = row[f"EffectTriggerSpell_{i}"]
+            dummy = era_by_id.get(trigger)
+            if (row[f"Effect_{i}"] == SPELL_EFFECT_APPLY_AURA and row[f"EffectAura_{i}"] == SPELL_AURA_PROC_TRIGGER_SPELL
+                    and trigger and trigger != proc["ID"]
+                    and (dummy is None or dummy["Effect_0"] == SPELL_EFFECT_DUMMY)):
+                out[spell_id] = (i, trigger, proc["ID"])
+    return out
+
+
+def remap_judgement_procs(rows: list[dict], offset: int, era_ids: dict[int, int],
+                          procs: dict[int, tuple[int, int, int]]) -> list[int]:
+    """Points each Judgement of Light/Wisdom clone's proc trigger, a dummy no
+    core handles, at this era's copy of its heal or mana spell."""
+    changed = []
+    for row in rows:
+        entry = procs.get(row["ID"] - offset)
+        if entry is None or entry[2] not in era_ids:
+            continue
+        i, dummy, proc = entry
+        if row[f"EffectTriggerSpell_{i}"] == dummy:
+            row[f"EffectTriggerSpell_{i}"] = era_ids[proc]
+            changed.append(row["ID"])
+    return changed
+
+
 def remap_seal_procs(rows: list[dict], offset: int, era_ids: dict[int, int],
                      procs: dict[int, tuple[int, int]]) -> list[int]:
     """Points each seal clone's proc trigger at its proc half's era copy (see
@@ -875,6 +934,8 @@ def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
         Crusader cast the WotLK talent debuff. Vanilla Judgement of Command
         is itself a dummy naming its damage spell, so that is followed too.
       * Seal of Light's and Seal of Wisdom's proc halves (seal_proc_halves).
+      * Judgement of Light's heals and Judgement of Wisdom's mana returns
+        (judgement_procs).
       * Redoubt's block buffs (talent_proc_buffs).
       * Forbearance, which lasts 1 minute in both eras and 2 in WotLK. The
         era immunity handler applies the era's copy.
@@ -895,6 +956,7 @@ def era_side_spells(wanted: set[int], era_by_id: dict[int, dict]) -> set[int]:
         out.add(judgement["ID"])
         if judgement["Effect_0"] == SPELL_EFFECT_DUMMY and named(judgement, 0) in era_by_id:
             out.add(named(judgement, 0))
+    out |= {proc for _, _, proc in judgement_procs(wanted | out, era_by_id).values()}
     if FORBEARANCE in era_by_id:
         out.add(FORBEARANCE)
     return out
@@ -1164,6 +1226,16 @@ def build_clone(
         if clone[name] != value:
             clone[name] = value
             changed.append(name)
+
+    # Paladin judgements: 3.0 made them melee-class (dodged, parried, melee
+    # crit), the eras had them magic-class. Keeping WotLK's DefenseType gave
+    # the ids WotLK still has -- Judgement of Righteousness r1, Vengeance --
+    # melee rules while every later rank, ported from the era, used spell
+    # rules. The era's value is the same encoding (0-3), so take it.
+    if (era_row["SpellClassSet"] == SPELLFAMILY_PALADIN and era_row["Name_lang"]["enUS"].startswith("Judgement of")
+            and clone["DefenseType"] != era_row["DefenseType"]):
+        clone["DefenseType"] = era_row["DefenseType"]
+        changed.append("DefenseType")
 
     # The rank label DOES come from the era, unlike the other strings.
     # WotLK dropped "Rank 1" from spells it collapsed to a single rank, and
@@ -1526,9 +1598,14 @@ def main() -> int:
             era_procs = seal_proc_halves(wanted, era_by_id)
             seal_era_ids = {int(k): v for k, v in era_map.items()}
             repointed = remap_seal_procs(new_rows[era_rows_start:], offset, seal_era_ids, era_procs)
-            era_no_bonus[label] = sorted({seal_era_ids[p] for _, p in era_procs.values() if p in seal_era_ids})
             print(f"[{label}] pointed {len(repointed)} seal(s) at this era's copy of their proc "
                   f"(flat, no spell power): {repointed}", file=sys.stderr)
+            judged = judgement_procs(wanted, era_by_id)
+            repointed = remap_judgement_procs(new_rows[era_rows_start:], offset, seal_era_ids, judged)
+            print(f"[{label}] pointed {len(repointed)} Judgement of Light/Wisdom rank(s) at this era's "
+                  f"copy of their heal/mana spell (flat): {repointed}", file=sys.stderr)
+            era_no_bonus[label] = sorted({seal_era_ids[p] for _, p in era_procs.values() if p in seal_era_ids}
+                                         | {seal_era_ids[p] for _, _, p in judged.values() if p in seal_era_ids})
             repointed = remap_seal_procs(new_rows[era_rows_start:], offset, seal_era_ids,
                                          talent_proc_buffs(wanted, era_by_id))
             print(f"[{label}] pointed {len(repointed)} talent rank(s) at this era's copy of their buff: "

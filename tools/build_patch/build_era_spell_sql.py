@@ -167,6 +167,10 @@ PROC_TABLES = {"spell_proc", "spell_proc_event"}
 ERA_SCRIPTS = {
     ("Vanilla", 20271): "spell_era_pal_judgement",
     ("TBC", 20271): "spell_era_pal_judgement",
+    # Judgement of Light / Wisdom debuffs, every rank: the attacker casts
+    # the rank's heal or mana spell (build_era_spells.py judgement_procs).
+    **{(era, s): "spell_era_pal_judgement_of_light_wisdom"
+       for era in ("Vanilla", "TBC") for s in (-20185, -20186)},
     ("TBC", 34074): "spell_era_hun_aspect_of_the_viper",
     # Cold Snap: Vanilla's is 12472 (WotLK Icy Veins), TBC's is 11958.
     ("Vanilla", 12472): "spell_era_mag_cold_snap",

@@ -432,6 +432,42 @@ class spell_era_pal_seal_of_righteousness : public AuraScript
     }
 };
 
+// Judgement of Light / Wisdom (Vanilla and TBC, every rank): "Melee attacks
+// made against you have a chance of causing the attacker to be healed for
+// $20267s1" / "...of restoring $20268s1 of the attacker's mana". The era
+// debuff's proc trigger was a DUMMY the 1.12/2.4.3 core swapped for the
+// rank's heal or mana spell, cast by the ATTACKER on itself.
+// build_era_spells.py (judgement_procs) points the clone's trigger at that
+// spell's era copy; a plain proc would have the debuffed target cast it, so
+// the mob would heal itself. This casts it from the attacker instead.
+class spell_era_pal_judgement_of_light_wisdom : public AuraScript
+{
+    PrepareAuraScript(spell_era_pal_judgement_of_light_wisdom);
+
+    bool CheckProc(ProcEventInfo& eventInfo)
+    {
+        Unit* attacker = eventInfo.GetActor();
+        return attacker && attacker != GetTarget() && attacker->IsAlive();
+    }
+
+    void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+    {
+        PreventDefaultAction();
+
+        Unit* attacker = eventInfo.GetActor();
+        uint32 const procSpell = aurEff->GetSpellInfo()->Effects[aurEff->GetEffIndex()].TriggerSpell;
+        if (!sSpellMgr->GetSpellInfo(procSpell))
+            return;
+        attacker->CastSpell(attacker, procSpell, true, nullptr, aurEff);
+    }
+
+    void Register() override
+    {
+        DoCheckProc += AuraCheckProcFn(spell_era_pal_judgement_of_light_wisdom::CheckProc);
+        OnEffectProc += AuraEffectProcFn(spell_era_pal_judgement_of_light_wisdom::HandleProc, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL);
+    }
+};
+
 // The hit spell 25742 the Vanilla seal above casts. The core adds the
 // target's "Holy damage taken" (Judgement of the Crusader) with 25742's own
 // coefficient, and 25742 has no spell_bonus_data, so that is the instant-cast
@@ -529,5 +565,6 @@ void AddSC_era_spell_scripts()
     RegisterSpellScript(spell_era_mag_cold_snap);
     RegisterSpellScript(spell_era_pal_holy_shock);
     RegisterSpellScript(spell_era_pal_judgement);
+    RegisterSpellScript(spell_era_pal_judgement_of_light_wisdom);
     RegisterSpellScript(spell_era_hun_aspect_of_the_viper);
 }
