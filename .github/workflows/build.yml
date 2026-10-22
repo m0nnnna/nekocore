@@ -99,7 +99,7 @@ jobs:
             args=()
             for t in $TAGS; do args+=(-t "$IMAGES-$name:$t"); done
             [ -n "$target" ] && args+=(--target "$target")
-            docker buildx build "${args[@]}" \
+            docker buildx build "${args[@]}" ${PULL:-} \
               -f "$file" \
               --build-arg USER_ID=1000 --build-arg GROUP_ID=1000 --build-arg DOCKER_USER=acore \
               --label "org.opencontainers.image.source=$SOURCE" \
@@ -111,7 +111,9 @@ jobs:
           build worldserver server server/apps/docker/Dockerfile worldserver
           build authserver  server server/apps/docker/Dockerfile authserver
           build db-import   server server/apps/docker/Dockerfile db-import
-          build website     website website/Dockerfile
+          # --pull: always the newest php:8.3-apache, so PHP security fixes land
+          # with the next build even when nothing in website/ changed.
+          PULL=--pull build website website website/Dockerfile
 
       - name: Runtime bundle
         run: tools/build/runtime-bundle.sh dist "${{ steps.v.outputs.version }}"

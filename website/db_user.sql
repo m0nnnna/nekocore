@@ -6,9 +6,11 @@
 --
 -- Run as root, after changing the password:
 --   docker exec -i ac-database mysql -uroot -p < db_user.sql
--- then set NEKO_DB_USER=neko_web and NEKO_DB_PASS=... in docker.env and
--- remove the NEKO_DB_USER/NEKO_DB_PASS lines from the neko-website service's
--- `environment:` block (they override docker.env), and restart the site.
+-- then add to /opt/nekocore/server/.env (updates leave that file alone):
+--   NEKO_WEB_DB_USER=neko_web
+--   NEKO_WEB_DB_PASS=<the password below>
+-- and recreate just the site:
+--   cd /opt/nekocore/server && docker compose up -d --no-deps neko-website
 --
 -- '%' because the container connects from whatever address Docker gives it on
 -- ac-network. Keep the database port off the public internet.

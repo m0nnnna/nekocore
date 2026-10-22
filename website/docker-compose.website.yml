@@ -23,12 +23,11 @@ services:
     env_file:
       - ../website/docker.env
     environment:
-      # Same root login the ac-* containers use. Better: create the limited
-      # account in website/db_user.sql, delete these two lines (values here win
-      # over docker.env), and set NEKO_DB_USER/NEKO_DB_PASS in docker.env.
+      # root unless .env sets NEKO_WEB_DB_USER / NEKO_WEB_DB_PASS to the
+      # limited account from website/db_user.sql.
       NEKO_DB_HOST: ac-database
-      NEKO_DB_USER: root
-      NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:?set DOCKER_DB_ROOT_PASSWORD in .env}
+      NEKO_DB_USER: ${NEKO_WEB_DB_USER:-root}
+      NEKO_DB_PASS: ${NEKO_WEB_DB_PASS:-${DOCKER_DB_ROOT_PASSWORD}}
       NEKO_AUTH_HOST: ac-authserver
       NEKO_WORLD_HOST: ac-worldserver
       NEKO_REALM_ADDRESS: wow1.nekos.farm

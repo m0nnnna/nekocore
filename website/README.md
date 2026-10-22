@@ -94,13 +94,15 @@ Config is all environment: `NEKO_BASE_URL`, `NEKO_DB_*`, `NEKO_SMTP_*`, `NEKO_AU
 
 ## Security notes
 
-- **Keep PHP patched.** The image follows `php:8.3-apache`, so pick up PHP
-  security releases with `docker compose build --pull neko-website` and check
-  `docker exec neko-website php -v`.
+- **Keep PHP patched.** The image is built in GitHub Actions on top of
+  `php:8.3-apache` (pulled fresh each build). After a PHP security release,
+  run the `build` workflow (a push to master, or Actions -> build -> Run
+  workflow), update the realm box, and check `docker exec neko-website php -v`.
 - **`NEKO_BASE_URL` is required** for registration and password reset. Emailed
   links are built only from it, never from the request's `Host` header.
 - **Don't run the site as MySQL root.** `db_user.sql` creates `neko_web` with
-  just the grants the pages use; see the comments at its top for switching over.
+  just the grants the pages use. Switch with `NEKO_WEB_DB_USER` /
+  `NEKO_WEB_DB_PASS` in `server/.env`; see the comments at the top of the file.
 - **Staff sign-in is throttled** per client IP (10 failures / 15 min) and per
   account (5 / 15 min), in small files under the system temp directory. Behind
   a reverse proxy every request has the proxy's IP, so the IP limit is shared
