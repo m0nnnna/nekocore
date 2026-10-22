@@ -97,7 +97,8 @@ Config is all environment: `NEKO_BASE_URL`, `NEKO_DB_*`, `NEKO_SMTP_*`, `NEKO_AU
 - **Keep PHP patched.** The image is built in GitHub Actions on top of
   `php:8.3-apache` (pulled fresh each build). After a PHP security release,
   run the `build` workflow (a push to master, or Actions -> build -> Run
-  workflow), update the realm box, and check `docker exec neko-website php -v`.
+  workflow), then `nekocore-update --website --edge` on the realm box (the
+  realm keeps running) and check `docker exec neko-website php -v`.
 - **`NEKO_BASE_URL` is required** for registration and password reset. Emailed
   links are built only from it, never from the request's `Host` header.
 - **Don't run the site as MySQL root.** `db_user.sql` creates `neko_web` with

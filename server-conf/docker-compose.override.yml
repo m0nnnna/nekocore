@@ -95,7 +95,8 @@ services:
 
   neko-website:
     container_name: neko-website
-    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-website:${NEKOCORE_TAG:-local}
+    # Its own tag when `nekocore update --website` moved it; else the realm's.
+    image: ${NEKOCORE_IMAGES:-ghcr.io/m0nnnna/nekocore}-website:${NEKOCORE_WEBSITE_TAG:-${NEKOCORE_TAG:-local}}
     build:
       context: ../website
     networks:

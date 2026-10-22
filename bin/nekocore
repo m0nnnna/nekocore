@@ -9,12 +9,17 @@
 #   nekocore update --edge          newest build of master
 #   nekocore update --version v1.2  one release in particular
 #   nekocore-update [--edge ...]    the same as `nekocore update`
+#       --website    only the website: pull its image, restart neko-website,
+#                    leave the realm running (with --edge/--version/--check)
 #       --check      only say whether there is one (exit 10 = update waiting)
 #       --yes        don't ask, even with players online
 #       --no-world   keep acore_world even if the release ships a new dump
 #       --no-backup  skip the database backup taken before every update
 #       --force      reinstall what is already installed
 #   nekocore rollback               back to what ran before the last update
+#   nekocore rollback --website     the website back to its previous image
+#   nekocore link                   put nekocore + nekocore-update on PATH
+#                                   (/usr/local/bin) and say what's wrong if it can't
 #   nekocore channel [stable|edge]  show or set what a bare `update` follows
 #   nekocore backup [db ...]        dump acore_auth/characters/world to backups/
 #   nekocore backups                list them
@@ -172,6 +177,7 @@ channel() { c=$(conf NEKOCORE_CHANNEL stable); echo "$c"; }
 
 # nekocore and nekocore-update in /usr/local/bin, like ultimit-update.
 link_commands() {
+    [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || true
     for n in nekocore nekocore-update; do
         [ "$(readlink "/usr/local/bin/$n" 2>/dev/null)" = "$H/bin/nekocore" ] && continue
         if ln -sfn "$H/bin/nekocore" "/usr/local/bin/$n" 2>/dev/null; then
@@ -182,11 +188,34 @@ link_commands() {
     done
 }
 
+cmd_link() {
+    link_commands
+    for n in nekocore nekocore-update; do
+        if [ "$(readlink "/usr/local/bin/$n" 2>/dev/null)" = "$H/bin/nekocore" ]; then
+            echo "  /usr/local/bin/$n -> $H/bin/nekocore"
+        else
+            echo "  /usr/local/bin/$n is missing (run this as root)"
+        fi
+    done
+    case ":$PATH:" in
+        *:/usr/local/bin:*) ;;
+        *) warn "/usr/local/bin isn't on this shell's PATH ($PATH): add it, or call $H/bin/nekocore" ;;
+    esac
+    echo "If the shell still says 'not found', run 'hash -r' or open a new one."
+}
+
 cmd_status() {
     need_box
+    link_commands
     echo "NekoCore at $H"
     echo "  version   $(installed_version)"
     echo "  channel   $(channel)    images $(kv_get "$S/.env" NEKOCORE_IMAGES)-*:$(kv_get "$S/.env" NEKOCORE_TAG)"
+    wt=$(kv_get "$S/.env" NEKOCORE_WEBSITE_TAG)
+    if [ -n "$wt" ]; then
+        echo "  website   $wt on its own ($(kv_get "$S/.env" NEKOCORE_WEBSITE_VERSION)); the next full update brings it back in line"
+    else
+        echo "  website   same image tag as the realm"
+    fi
     echo "  players   $(players_online) online"
     last=$(ls -1t "$H"/backups/*/*.sql.gz 2>/dev/null | head -1 || true)
     echo "  patch     $(cat "$H/PATCH_VERSION" 2>/dev/null || echo unknown)"
@@ -311,6 +340,9 @@ recreate_and_check() {
 
 cmd_rollback() {
     need_box
+    for a in "$@"; do
+        case "$a" in --website) cmd_rollback_website; return ;; esac
+    done
     [ -f "$H/.previous.tar.gz" ] || die "nothing to roll back to (no $H/.previous.tar.gz)"
     prev=$(tar -xzf "$H/.previous.tar.gz" -O VERSION 2>/dev/null || echo "the deploy-drop install")
     confirm "Go back to $prev? (Databases are not touched; 'nekocore restore' puts a backup back.)" || die "not rolled back (add --yes)"
@@ -348,6 +380,123 @@ migrate_env() { # first update of a box installed from the deploy drop
     return 0
 }
 
+# --- realm box: the website on its own ----------------------------------------
+
+# The website image can move without the realm. server/.env holds its own tag
+# (NEKOCORE_WEBSITE_TAG; empty = the realm's NEKOCORE_TAG, see the compose
+# override), what it is (NEKOCORE_WEBSITE_VERSION) and what ran before
+# (NEKOCORE_WEBSITE_PREV, "realm" = the realm's tag) for rollback --website.
+# A full update clears them, so the two only drift apart on purpose.
+WEBSITE_KEYS="NEKOCORE_WEBSITE_TAG NEKOCORE_WEBSITE_VERSION NEKOCORE_WEBSITE_PREV NEKOCORE_WEBSITE_PREV_VERSION"
+
+website_tag() { t=$(kv_get "$S/.env" NEKOCORE_WEBSITE_TAG); echo "${t:-$(kv_get "$S/.env" NEKOCORE_TAG)}"; }
+website_image() { i=$(kv_get "$S/.env" NEKOCORE_IMAGES); echo "${i:-$IMAGES}-website:$1"; }
+
+website_follow_realm() {
+    for k in $WEBSITE_KEYS; do
+        if [ -n "$(kv_get "$S/.env" "$k")" ]; then kv_set "$S/.env" "$k" ""; fi
+    done
+}
+
+need_website_tags() {
+    grep -q NEKOCORE_WEBSITE_TAG "$S/docker-compose.override.yml" 2>/dev/null \
+        || die "this install's compose file predates website-only updates: run one full 'nekocore update' first"
+}
+
+ghcr_login() {
+    [ -n "$TOKEN" ] || return 0
+    printf '%s' "$TOKEN" | docker login ghcr.io -u "$(echo "$REPO_SLUG" | cut -d/ -f1)" --password-stdin >/dev/null 2>&1 || warn "docker login to ghcr.io failed; trying without"
+}
+
+# Recreates neko-website alone and waits (up to 2 min) for its health check
+# (the image's HEALTHCHECK fetches healthz.php: PHP up, auth DB answering).
+website_recreate_and_check() {
+    compose up -d --no-deps --force-recreate neko-website
+    i=0
+    while [ $i -lt 24 ]; do
+        st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' neko-website 2>/dev/null || echo missing)
+        case "$st" in
+            healthy|running) return 0 ;;   # running = an image without a health check
+            unhealthy|exited|dead|missing) return 1 ;;
+        esac
+        i=$((i + 1)); sleep 5
+    done
+    return 1
+}
+
+website_switch() { # tag ("" = the realm's) description
+    old=$(kv_get "$S/.env" NEKOCORE_WEBSITE_TAG)
+    oldver=$(kv_get "$S/.env" NEKOCORE_WEBSITE_VERSION)
+    kv_set "$S/.env" NEKOCORE_WEBSITE_TAG "$1"
+    kv_set "$S/.env" NEKOCORE_WEBSITE_VERSION "$2"
+    say "starting the website on $(website_tag)"
+    if ! website_recreate_and_check; then
+        warn "the website didn't come up healthy on $(website_tag); going back"
+        docker logs --tail 20 neko-website >&2 || true
+        kv_set "$S/.env" NEKOCORE_WEBSITE_TAG "$old"
+        kv_set "$S/.env" NEKOCORE_WEBSITE_VERSION "$oldver"
+        website_recreate_and_check || warn "the previous website isn't healthy either: nekocore logs website"
+        die "website not changed, back on $(website_tag)"
+    fi
+    kv_set "$S/.env" NEKOCORE_WEBSITE_PREV "${old:-realm}"
+    kv_set "$S/.env" NEKOCORE_WEBSITE_PREV_VERSION "$oldver"
+}
+
+cmd_update_website() { # uses TARGET CHECK FORCE from cmd_update
+    need_website_tags
+    resolve_release
+    current=$(website_tag)
+    if [ "$current" = "$IMG_TAG" ] && [ $FORCE = 0 ]; then
+        echo "website up to date ($current)"
+        [ $CHECK = 1 ] && exit 0 || return 0
+    fi
+    if [ $CHECK = 1 ]; then
+        echo "website update waiting: $current -> $IMG_TAG"
+        exit 10
+    fi
+
+    say "pulling $(website_image "$IMG_TAG")"
+    ghcr_login
+    docker pull -q "$(website_image "$IMG_TAG")" >/dev/null || die "couldn't pull $(website_image "$IMG_TAG") -- nothing has been changed"
+
+    # The site's settings template comes with the release, not the image.
+    W="$H/.update-website"; rm -rf "$W"; mkdir -p "$W"
+    if fetch_asset "$REL_JSON" nekocore-runtime.tar.gz "$W"; then
+        tar -C "$W" -xzf "$W/nekocore-runtime.tar.gz"
+        if [ -f "$W/nekocore/website/docker.env.example" ]; then
+            mkdir -p "$H/website"
+            cp "$W/nekocore/website/docker.env.example" "$H/website/"
+        fi
+    else
+        warn "release $REL_TAG has no nekocore-runtime.tar.gz; website/docker.env.example not refreshed"
+    fi
+    rm -rf "$W"
+
+    if [ "$REL_TAG" = edge ]; then desc="edge $(printf '%.12s' "$REL_COMMIT")"; else desc=$REL_TAG; fi
+    website_switch "$IMG_TAG" "$desc"
+    if grep -q '^NEKO_BASE_URL=' "$H/website/docker.env.example" 2>/dev/null \
+        && ! grep -qE '^NEKO_BASE_URL=.' "$H/website/docker.env" 2>/dev/null; then
+        warn "set NEKO_BASE_URL in $H/website/docker.env (see docker.env.example): registration and password-reset mail won't send without it"
+    fi
+    say "website on $desc; the realm stays on $(installed_version)"
+}
+
+cmd_rollback_website() {
+    need_website_tags
+    prev=$(kv_get "$S/.env" NEKOCORE_WEBSITE_PREV)
+    [ -n "$prev" ] || die "nothing to roll the website back to (no 'update --website' since the last full update)"
+    pver=$(kv_get "$S/.env" NEKOCORE_WEBSITE_PREV_VERSION)
+    [ "$prev" = realm ] && prev=""
+    img=$(website_image "${prev:-$(kv_get "$S/.env" NEKOCORE_TAG)}")
+    if ! docker image inspect "$img" >/dev/null 2>&1; then
+        say "pulling $img"
+        ghcr_login
+        docker pull -q "$img" >/dev/null || die "couldn't pull $img -- nothing has been changed"
+    fi
+    website_switch "$prev" "$pver"
+    say "website back on $(website_tag)"
+}
+
 resolve_release() { # sets REL_JSON REL_TAG REL_COMMIT IMG_TAG for $TARGET
     case "$TARGET" in
         edge) REL_JSON=$(gh_api "repos/$REPO_SLUG/releases/tags/edge") || die "no edge release on $REPO_SLUG yet (GitHub Actions makes it on the first push to master)" ;;
@@ -364,9 +513,10 @@ resolve_release() { # sets REL_JSON REL_TAG REL_COMMIT IMG_TAG for $TARGET
 }
 
 cmd_update() {
-    TARGET=$(channel) CHECK=0 NOWORLD=0 NOBACKUP=0 FORCE=0
+    TARGET=$(channel) CHECK=0 NOWORLD=0 NOBACKUP=0 FORCE=0 WEBSITE=0
     while [ $# -gt 0 ]; do
         case "$1" in
+            --website) WEBSITE=1 ;;
             --edge) TARGET=edge ;;
             --stable) TARGET=stable ;;
             --version) TARGET=${2:?--version needs a tag}; shift ;;
@@ -381,6 +531,7 @@ cmd_update() {
     done
     need_box
     [ $CHECK = 1 ] || link_commands
+    if [ $WEBSITE = 1 ]; then cmd_update_website; return; fi
     resolve_release
     # Edge is the same tag every time; what moved is the commit.
     if [ "$REL_TAG" = edge ]; then
@@ -419,9 +570,7 @@ cmd_update() {
     fi
 
     say "pulling images $IMAGES-*:$IMG_TAG"
-    if [ -n "$TOKEN" ]; then
-        printf '%s' "$TOKEN" | docker login ghcr.io -u "$(echo "$REPO_SLUG" | cut -d/ -f1)" --password-stdin >/dev/null 2>&1 || warn "docker login to ghcr.io failed; trying without"
-    fi
+    ghcr_login
     for i in worldserver authserver db-import website; do
         docker pull -q "$IMAGES-$i:$IMG_TAG" >/dev/null || die "couldn't pull $IMAGES-$i:$IMG_TAG -- nothing has been changed"
     done
@@ -459,6 +608,7 @@ cmd_update() {
         tar -C "$H" -xzf "$W/nekocore-gamedata.tar.gz"
     fi
     kv_set "$S/.env" NEKOCORE_TAG "$IMG_TAG"
+    website_follow_realm   # a full update brings a website-only one back in line
     # Last, so a failed update still leaves the old command to roll back with.
     cp "$R/bin/nekocore" "$H/bin/nekocore.new" && mv "$H/bin/nekocore.new" "$H/bin/nekocore"
 
@@ -642,7 +792,8 @@ for a in "$@"; do case "$a" in --yes|-y) YES=1 ;; esac; done
 case "$cmd" in
     status) cmd_status ;;
     update) cmd_update "$@" ;;
-    rollback) cmd_rollback ;;
+    rollback) cmd_rollback "$@" ;;
+    link) cmd_link ;;
     channel) cmd_channel "$@" ;;
     backup) cmd_backup "$@" ;;
     backups) cmd_backups ;;

@@ -93,7 +93,10 @@ nekocore update                  # newest stable release
 nekocore update --edge           # newest master build
 nekocore-update [--edge]         # the same; update links both into /usr/local/bin
 nekocore update --check          # exit 10 = an update is waiting
+nekocore update --website --edge # only the website; the realm keeps running (see below)
 nekocore rollback                # back to what ran before the last update (files + images)
+nekocore rollback --website      # the website back to the image it had before
+nekocore link                    # (re)make /usr/local/bin/nekocore{,-update}; run as root
 nekocore channel edge            # make bare `update` follow edge
 nekocore backup                  # all three DBs -> backups/<db>/<db>_YYYYmmdd_HHMMSS.sql.gz
 nekocore backups                 # list them
@@ -102,6 +105,41 @@ nekocore cron                    # hourly auth/characters, daily world backups; 
 nekocore logs [worldserver|authserver|website|database]
 nekocore restart
 ```
+
+### Updating only the website
+
+`nekocore update --website` (or `nekocore-update --website`, with `--edge`,
+`--version vX` or `--check` as usual) moves just the website: it pulls the
+release's `nekocore-website` image, refreshes `website/docker.env.example`,
+and recreates `neko-website` alone. The worldserver, authserver and database
+keep running, nobody is kicked, and there is no backup (the website doesn't
+change any database by itself). It waits for the image's health check; if
+the site doesn't come up healthy, it goes straight back to the image it had.
+
+The website's own tag is kept in `server/.env` (`NEKOCORE_WEBSITE_TAG`,
+empty = the realm's `NEKOCORE_TAG`), and `nekocore status` shows it. The
+next full `update` puts the website back on the realm's tag, so the two only
+drift apart on purpose. `nekocore rollback --website` swaps back to the
+previous website image (run it again to swap forward).
+
+Use it for website-only changes and for PHP security releases: after a new
+build (the build workflow always starts from the newest `php:8.3-apache`),
+`nekocore-update --website --edge` puts it live. The website can then be
+newer than the realm. A page that needs a table only a newer release creates
+shows a "database had a problem" message until the realm catches up.
+
+The first box update after this feature still needs one full `update`, which
+installs the compose file that knows about the website's own tag.
+
+### When `nekocore-update` says "not found"
+
+`update` and `status` link `/usr/local/bin/nekocore` and
+`/usr/local/bin/nekocore-update` to `bin/nekocore`. They can only do that as
+root, and the first update after the links were added still ran the old
+script. `nekocore link` (as root, by full path the first time:
+`/opt/nekocore/bin/nekocore link`) makes them and says what's wrong if it
+can't, such as `/usr/local/bin` missing from `PATH`. If the shell still says
+"not found" after that, `hash -r` or a new shell clears its cache.
 
 What `update` does:
 
