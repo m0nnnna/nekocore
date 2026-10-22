@@ -25,6 +25,7 @@ www/
   styles.css
 
 news_schema.sql            CREATE TABLE web_news (auth database)
+db_user.sql                limited MySQL account for the site (instead of root)
 import_announcements.php   one-shot import of the old www/data/*.json posts
 create_announcement.php    post from the CLI
 ```
@@ -85,11 +86,27 @@ docker logs -f neko-website
 docker exec neko-website php /var/www/private/import_announcements.php /var/www/html
 ```
 
-Config is all environment: `NEKO_DB_*`, `NEKO_SMTP_*`, `NEKO_AUTH_HOST`,
+Config is all environment: `NEKO_BASE_URL`, `NEKO_DB_*`, `NEKO_SMTP_*`, `NEKO_AUTH_HOST`,
 `NEKO_WORLD_HOST`, `NEKO_REGISTRATIONS_OPEN`, `NEKO_TZ`, … (see
 `docker.env.example`). `NEKO_PRIVATE_DIR` points the site at
 `/var/www/private` inside the image; outside Docker it defaults to
 `C:\laragon`, so the Laragon deployment keeps working unchanged.
+
+## Security notes
+
+- **Keep PHP patched.** The image follows `php:8.3-apache`, so pick up PHP
+  security releases with `docker compose build --pull neko-website` and check
+  `docker exec neko-website php -v`.
+- **`NEKO_BASE_URL` is required** for registration and password reset. Emailed
+  links are built only from it, never from the request's `Host` header.
+- **Don't run the site as MySQL root.** `db_user.sql` creates `neko_web` with
+  just the grants the pages use; see the comments at its top for switching over.
+- **Staff sign-in is throttled** per client IP (10 failures / 15 min) and per
+  account (5 / 15 min), in small files under the system temp directory. Behind
+  a reverse proxy every request has the proxy's IP, so the IP limit is shared
+  by everyone signing in.
+- Database and exception details go to the PHP error log (`docker logs
+  neko-website`), not to the page.
 
 `opcache.validate_timestamps` is off in the image — PHP changes need a
 rebuild, not just a restart.

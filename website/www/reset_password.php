@@ -73,7 +73,8 @@ if (!$pdo) {
                     if ($pdo->inTransaction()) {
                         $pdo->rollBack();
                     }
-                    $errors[] = 'Could not reset your password: ' . $e->getMessage();
+                    neko_log_error('reset_password', $e);
+                    $errors[] = 'Could not reset your password right now. Try the link again in a few minutes.';
                 }
             }
         }

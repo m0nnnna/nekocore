@@ -49,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
 
                     if (!empty($account['email'])) {
-                        $reset_url = neko_base_url() . '/reset_password.php?token=' . urlencode($token);
                         try {
+                            $reset_url = neko_mail_base_url() . '/reset_password.php?token=' . urlencode($token);
                             $mailer = new SmtpMailer(neko_mail_config());
                             $mailer->send(
                                 $account['email'],

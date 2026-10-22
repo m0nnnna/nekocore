@@ -17,7 +17,8 @@ if (!$pdo_chars) {
             ORDER BY id ASC
         ")->fetchAll(PDO::FETCH_ASSOC);
     } catch (Exception $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('exchange', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 

@@ -24,7 +24,8 @@ if (!$error) {
         $ladder = ch_ladder($db, $mapId, $bracket, 20);
         $runs   = ch_recent_runs($db, $mapId, $bracket, $perPage + 1, ($page - 1) * $perPage);
     } catch (PDOException $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('challenges', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 

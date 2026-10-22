@@ -58,7 +58,8 @@ if (!$error) {
             $chars = array_slice($chars, 0, 100);
         }
     } catch (PDOException $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('leaderboard', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 

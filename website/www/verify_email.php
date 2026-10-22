@@ -50,7 +50,8 @@ if (!$pdo) {
         if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
             $errors[] = 'That username or email was taken by another account while this link was waiting. Register again with a different username.';
         } else {
-            $errors[] = 'Could not finish creating your account: ' . $e->getMessage();
+            neko_log_error('verify_email', $e);
+            $errors[] = 'Could not finish creating your account right now. Try the link again in a few minutes.';
         }
     }
 }

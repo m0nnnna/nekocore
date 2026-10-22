@@ -23,8 +23,9 @@ services:
     env_file:
       - ../website/docker.env
     environment:
-      # Same root login the ac-* containers use; override in docker.env to use
-      # a limited account instead.
+      # Same root login the ac-* containers use. Better: create the limited
+      # account in website/db_user.sql, delete these two lines (values here win
+      # over docker.env), and set NEKO_DB_USER/NEKO_DB_PASS in docker.env.
       NEKO_DB_HOST: ac-database
       NEKO_DB_USER: root
       NEKO_DB_PASS: ${DOCKER_DB_ROOT_PASSWORD:?set DOCKER_DB_ROOT_PASSWORD in .env}

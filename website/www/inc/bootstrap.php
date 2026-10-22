@@ -39,6 +39,10 @@ $neko = [
     // the patch above, sets the realm, starts the game
     'launcher_url'       => neko_env('NEKO_LAUNCHER_URL',
         'https://github.com/m0nnnna/wotlk-client-tools/releases/latest/download/NekoCoreLauncher.exe'),
+    // The site's public address, e.g. https://example.org. Verification and
+    // password-reset emails are built from this, never from the request's
+    // Host header (which the sender controls).
+    'base_url'           => rtrim(neko_env('NEKO_BASE_URL', ''), '/'),
 ];
 
 date_default_timezone_set(neko_env('NEKO_TZ', 'America/Chicago'));
@@ -134,12 +138,46 @@ function neko_realm_status(): array
     ];
 }
 
-/** Absolute base URL of the site (scheme + host), for feeds and share links. */
+/**
+ * Absolute base URL of the site (scheme + host), for feeds and share links.
+ * NEKO_BASE_URL when set; otherwise it falls back to the request's host,
+ * which is fine for a feed but not for anything emailed (see neko_mail_base_url()).
+ */
 function neko_base_url(): string
 {
+    global $neko;
+    if ($neko['base_url'] !== '') {
+        return $neko['base_url'];
+    }
     $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    if (!preg_match('/^[A-Za-z0-9.-]+(:\d+)?$/', $host)) {
+        $host = 'localhost';
+    }
     return ($https ? 'https' : 'http') . '://' . $host;
+}
+
+/**
+ * Base URL for links that go out by email. Only the configured NEKO_BASE_URL
+ * will do: a link built from the Host header lets anyone who requests a reset
+ * for someone else point the emailed token at their own server.
+ *
+ * @throws RuntimeException when NEKO_BASE_URL is not set.
+ */
+function neko_mail_base_url(): string
+{
+    global $neko;
+    if ($neko['base_url'] === '') {
+        error_log('NekoCore: NEKO_BASE_URL is not set; refusing to email a link built from the Host header.');
+        throw new RuntimeException('NEKO_BASE_URL is not configured.');
+    }
+    return $neko['base_url'];
+}
+
+/** Log an exception for staff; the page shows the visitor a generic message instead. */
+function neko_log_error(string $where, Throwable $t): void
+{
+    error_log('NekoCore ' . $where . ': ' . get_class($t) . ': ' . $t->getMessage());
 }
 
 /** "3 days ago" style relative time for a unix timestamp. */

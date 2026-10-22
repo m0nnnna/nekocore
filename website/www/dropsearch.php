@@ -47,7 +47,8 @@ if ($search_item !== '' && empty($errors)) {
             }
             usort($results, fn($a, $b) => $b['Chance'] <=> $a['Chance']);
         } catch (Exception $e) {
-            $errors[] = 'Database error: ' . $e->getMessage();
+            neko_log_error('dropsearch', $e);
+            $errors[] = 'The database had a problem loading this page. Try again in a moment.';
         }
     }
 }

@@ -47,7 +47,8 @@ if (!$error) {
             $sizes = $st->fetchAll(PDO::FETCH_COLUMN);
         }
     } catch (PDOException $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('rankings', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 

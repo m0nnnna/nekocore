@@ -22,7 +22,8 @@ if (!$error) {
             $runs = nl_recent_runs($db, $mapId, $perPage + 1, ($page - 1) * $perPage);
         }
     } catch (PDOException $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('logs', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 $rows = $bossId ? $pulls : $runs;

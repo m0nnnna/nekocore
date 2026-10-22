@@ -66,7 +66,7 @@ if ($neko['registrations_open'] && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             'ttl' => $verification_ttl_hours
                         ]);
 
-                        $verify_url = neko_base_url() . '/verify_email.php?token=' . urlencode($token);
+                        $verify_url = neko_mail_base_url() . '/verify_email.php?token=' . urlencode($token);
 
                         $mailer = new SmtpMailer(neko_mail_config());
                         $mailer->send(

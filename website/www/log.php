@@ -52,7 +52,8 @@ if (!$error) {
             }
         }
     } catch (PDOException $e) {
-        $error = 'Database error: ' . $e->getMessage();
+        neko_log_error('log', $e);
+        $error = 'The database had a problem loading this page. Try again in a moment.';
     }
 }
 
