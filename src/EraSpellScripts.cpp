@@ -27,6 +27,8 @@
 #include "SpellScriptLoader.h"
 #include "Item.h"
 
+#include <cstring>
+
 #include "EraSpells.h"
 
 namespace
@@ -444,10 +446,19 @@ class spell_era_pal_judgement_of_light_wisdom : public AuraScript
 {
     PrepareAuraScript(spell_era_pal_judgement_of_light_wisdom);
 
+    static constexpr uint32 JUDGEMENT = 20271;
+
     bool CheckProc(ProcEventInfo& eventInfo)
     {
         Unit* attacker = eventInfo.GetActor();
-        return attacker && attacker != GetTarget() && attacker->IsAlive();
+        if (!attacker || attacker == GetTarget() || !attacker->IsAlive())
+            return false;
+        // The Judgement that applies this debuff is a melee-class hit on the
+        // target too, so it would trigger its own heal or mana return.
+        if (SpellInfo const* spell = eventInfo.GetSpellInfo())
+            if (spell->Id == GetId() || BaseSpellOf(spell->Id) == JUDGEMENT)
+                return false;
+        return true;
     }
 
     void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
@@ -555,8 +566,40 @@ class spell_era_pal_immunities : public SpellScript
     }
 };
 
+// Every era judgement debuff: "Your melee strikes will refresh the spell's
+// duration" (the Vanilla and TBC seal tooltips). The 1.12/2.4.3 core did
+// this on each melee hit the judging paladin landed; AzerothCore has no such
+// rule, so the debuff ran out after its 10 sec however often the paladin hit.
+// DIRECT_DAMAGE is a white swing, and DealMeleeDamage only deals it when the
+// swing landed (a miss, dodge or parry never gets here).
+class era_pal_judgement_refresh : public UnitScript
+{
+public:
+    era_pal_judgement_refresh() : UnitScript("era_pal_judgement_refresh") { }
+
+    uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype) override
+    {
+        if (damagetype != DIRECT_DAMAGE || !attacker || !victim || attacker == victim
+            || !attacker->IsPlayer() || attacker->getClass() != CLASS_PALADIN)
+            return damage;
+
+        for (auto const& [id, aurApp] : victim->GetAppliedAuras())
+        {
+            Aura* aura = aurApp->GetBase();
+            SpellInfo const* info = aura->GetSpellInfo();
+            if (EraOfSpell(id) == ERA_WOTLK || aura->GetCasterGUID() != attacker->GetGUID()
+                || info->SpellFamilyName != SPELLFAMILY_PALADIN || aura->GetMaxDuration() <= 0
+                || !info->SpellName[0] || std::strncmp(info->SpellName[0], "Judgement of", 12) != 0)
+                continue;
+            aura->RefreshDuration();
+        }
+        return damage;
+    }
+};
+
 void AddSC_era_spell_scripts()
 {
+    new era_pal_judgement_refresh();
     RegisterSpellScript(spell_era_pal_seal_of_righteousness);
     RegisterSpellScript(spell_era_pal_seal_of_righteousness_damage);
     RegisterSpellScript(spell_era_pal_immunities);

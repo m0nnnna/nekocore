@@ -32,9 +32,13 @@
 #include "ScriptMgr.h"
 #include "Player.h"
 #include "Chat.h"
+#include "SpellInfo.h"
 
 #include "EraSpells.h"
 
+#include <algorithm>
+#include <cstring>
+#include <iterator>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -63,6 +67,59 @@ namespace
             if (itr->second)
                 player->addActionButton(slot, itr->second, ACTION_BUTTON_SPELL);
         }
+    }
+
+    // Racials the era had but WotLK replaced under a new id: Perception
+    // (Human 20600; WotLK has 58985), Shadowmeld (Night Elf 20580; 58984),
+    // the Troll's mana and rage Berserking (20554, 26296; WotLK keeps only
+    // 26297). Moving held spells never reaches them, since a WotLK
+    // character holds no spell they are a copy of, and their era rows are
+    // not auto-learned (AcquireMethod 0, like every era copy). So: every
+    // era racial for this race and class whose base id the core never
+    // grants by itself, unless one of that name is already held (a Troll
+    // already has Berserking through 26297's copy).
+    bool HoldsSpellNamed(Player const* player, uint32 spellId)
+    {
+        SpellInfo const* wanted = sSpellMgr->GetSpellInfo(spellId);
+        if (!wanted || !wanted->SpellName[0])
+            return false;
+        for (auto const& [heldId, state] : player->GetSpellMap())
+        {
+            if (!state || state->State == PLAYERSPELL_REMOVED)
+                continue;
+            SpellInfo const* held = sSpellMgr->GetSpellInfo(heldId);
+            if (held && held->SpellName[0] && std::strcmp(held->SpellName[0], wanted->SpellName[0]) == 0)
+                return true;
+        }
+        return false;
+    }
+
+    std::vector<uint32> EraOnlyRacials(Player const* player, NekoEraSpells::Era era)
+    {
+        using namespace NekoEraSpells;
+        std::vector<uint32> out;
+        uint32 const offset = OffsetOfEra(era);
+        if (!offset)
+            return out;
+
+        for (SkillLineAbilityEntry const* ability : sSkillLineAbilityStore)
+        {
+            if (EraOfSpell(ability->Spell) != era || !(ability->RaceMask & player->getRaceMask())
+                || (ability->ClassMask && !(ability->ClassMask & player->getClassMask())))
+                continue;
+            if (std::find(std::begin(RACIAL_SKILL_LINES), std::end(RACIAL_SKILL_LINES), ability->SkillLine)
+                == std::end(RACIAL_SKILL_LINES))
+                continue;
+
+            bool grantedByCore = false;
+            SkillLineAbilityMapBounds const bounds = sSpellMgr->GetSkillLineAbilityMapBounds(ability->Spell - offset);
+            for (auto it = bounds.first; it != bounds.second && !grantedByCore; ++it)
+                grantedByCore = it->second->AcquireMethod == SKILL_LINE_ABILITY_LEARNED_ON_SKILL_LEARN;
+            if (grantedByCore || HoldsSpellNamed(player, ability->Spell))
+                continue;
+            out.push_back(ability->Spell);
+        }
+        return out;
     }
 }
 
@@ -119,9 +176,6 @@ namespace NekoEraSpells
             moves[spellId] = EraSpellFor(targetEra, BaseSpellOf(spellId));
         }
 
-        if (moves.empty())
-            return 0;
-
         RemapActionButtons(player, moves);
 
         uint32 changed = 0;
@@ -133,6 +187,14 @@ namespace NekoEraSpells
                 player->learnSpell(newSpell);
                 ++changed;
             }
+        }
+
+        for (uint32 racial : EraOnlyRacials(player, targetEra))
+        {
+            if (player->HasSpell(racial))
+                continue;
+            player->learnSpell(racial);
+            ++changed;
         }
         return changed;
     }
