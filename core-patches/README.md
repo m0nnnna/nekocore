@@ -59,3 +59,11 @@ applied), on the dev box and in CI; `--check` confirms `server/` carries them.
   `src/EraHitCrit.cpp`) names that part per spell aura, item stat or
   enchant; the core tallies it on every apply/remove in every era, so an
   era change only needs `UpdateAllRatings`. TBC and WotLK are unchanged.
+- `0008-swimmer-surface-water-path.patch` -- `PathGenerator::BuildPolyPath`
+  only took the straight water shortcut (start or end far from the navmesh)
+  when one end was under water and the other in it. A swimmer at the
+  surface chasing a target also at the surface (both in water, neither
+  under it) got an incomplete path over the lake floor, the chase called
+  it unreachable and the mob evaded: Maraudon's Thessala Hydras evaded as
+  they surfaced. Both ends in contact with water now counts as a water
+  path for a unit that can swim.

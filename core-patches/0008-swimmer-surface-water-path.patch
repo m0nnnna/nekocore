@@ -1,0 +1,18 @@
+diff --git a/src/server/game/Movement/MovementGenerators/PathGenerator.cpp b/src/server/game/Movement/MovementGenerators/PathGenerator.cpp
+index fddbb29d7..8feb22092 100644
+--- a/src/server/game/Movement/MovementGenerators/PathGenerator.cpp
++++ b/src/server/game/Movement/MovementGenerators/PathGenerator.cpp
+@@ -313,7 +313,12 @@ void PathGenerator::BuildPolyPath(G3D::Vector3 const& startPos, G3D::Vector3 con
+                                          (liquidDataEnd.Status & MAP_LIQUID_STATUS_IN_CONTACT) != 0;
+         bool startInWaterEndUnderWater = (liquidDataStart.Status & MAP_LIQUID_STATUS_IN_CONTACT) != 0 &&
+                                          liquidDataEnd.Status == LIQUID_MAP_UNDER_WATER;
+-        bool waterPath = startUnderWaterEndInWater || startInWaterEndUnderWater;
++        // both ends at the surface (in water, not under it) is a water path
++        // too, or a swimmer that surfaces next to a swimming target gets an
++        // incomplete floor path and evades
++        bool startInWaterEndInWater = (liquidDataStart.Status & MAP_LIQUID_STATUS_IN_CONTACT) != 0 &&
++                                      (liquidDataEnd.Status & MAP_LIQUID_STATUS_IN_CONTACT) != 0;
++        bool waterPath = startUnderWaterEndInWater || startInWaterEndUnderWater || startInWaterEndInWater;
+         Unit const* _sourceUnit = _source->ToUnit();
+ 
+         if (_sourceUnit)
