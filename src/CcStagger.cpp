@@ -8,14 +8,22 @@
  * one: a pack of Defias casters can still open with four CC spells inside
  * the same second, and a duo has no one left to act.
  *
- * Rule: in a five-man dungeon, once one creature has started a crowd control
- * spell, no OTHER creature of that instance may start one for a short
- * window. The window shrinks as the group grows and is zero at a full group,
- * so a normal five-player run plays exactly as it did. The blocked cast fails
- * as "not ready"; SmartAI simply skips that use and the mob keeps fighting.
+ * Rule: in a five-man dungeon, once a creature has started a crowd control
+ * spell, no creature of that instance -- the same one included -- may start
+ * another until that CC has had time to run out, plus a short breather. Both
+ * shrink as the group grows and are zero at a full group, so a normal
+ * five-player run plays exactly as it did. Counting only OTHER casters let a
+ * Sunken Temple pack of Atal'ai Deathwalkers (Fear every 12-18 sec each)
+ * line up one Fear every 3 sec, which a solo player never got out of. The
+ * blocked cast fails as "not ready"; SmartAI simply skips that use and the
+ * mob keeps fighting.
  *
  * Bosses are left alone unless Nekocore.CcStagger.Bosses is set: their CC is
  * scripted as part of the fight.
+ *
+ * Except mind control on the only player in the instance, boss or not and
+ * triggered or not: nobody is left to break it, so the fight just stops
+ * (Jammal'an's Hex in Sunken Temple, whose charm is a triggered 12483).
  *
  * What counts as crowd control is the same list AutoBalance uses for its
  * CCDuration modifier, plus root.
@@ -29,6 +37,7 @@
 #include "SpellInfo.h"
 #include "Timer.h"
 
+#include <algorithm>
 #include <mutex>
 #include <unordered_map>
 
@@ -38,10 +47,14 @@ namespace
     uint32 fullGroup = 5;
     bool includeBosses = false;
 
+    // The longest a CC counts as still running: a long one (a 20 sec
+    // sleep) should not shut every other CC out for its whole length.
+    constexpr uint32 MAX_CC_HOLD_MS = 10000;
+
     struct LastCc
     {
-        ObjectGuid caster;
         uint32 atMs = 0;
+        uint32 blockMs = 0; // how long after atMs no new CC may start
     };
 
     std::mutex lock;
@@ -58,6 +71,12 @@ namespace
             default:
                 return false;
         }
+    }
+
+    bool IsMindControl(SpellInfo const* info)
+    {
+        return info->HasAura(SPELL_AURA_MOD_CHARM) || info->HasAura(SPELL_AURA_MOD_POSSESS) ||
+            info->HasAura(SPELL_AURA_AOE_CHARM);
     }
 
     bool IsCrowdControl(SpellInfo const* info)
@@ -103,37 +122,53 @@ public:
 
     void OnSpellCheckCast(Spell* spell, bool /*strict*/, SpellCastResult& res) override
     {
-        if (res != SPELL_CAST_OK || staggerMs == 0 || fullGroup < 2 || !spell || spell->IsTriggered())
+        if (res != SPELL_CAST_OK || !spell)
             return;
 
         Creature* caster = spell->GetCaster() ? spell->GetCaster()->ToCreature() : nullptr;
-        if (!caster || caster->IsControlledByPlayer() || !IsCrowdControl(spell->GetSpellInfo()))
+        if (!caster || caster->IsControlledByPlayer())
             return;
 
+        SpellInfo const* info = spell->GetSpellInfo();
         Map* map = caster->GetMap();
-        if (!map || !map->IsNonRaidDungeon() || (!includeBosses && caster->IsDungeonBoss()))
+        if (!map || !map->IsNonRaidDungeon())
             return;
 
         uint32 players = map->GetPlayersCountExceptGMs();
-        if (players == 0 || players >= fullGroup)
+        if (players == 0)
             return;
 
-        // Full window for one player, none at a full group.
-        uint32 window = staggerMs * (fullGroup - players) / (fullGroup - 1);
+        if (players == 1 && IsMindControl(info))
+        {
+            Unit* target = spell->m_targets.GetUnitTarget();
+            if (!target || target->IsPlayer())
+            {
+                res = SPELL_FAILED_NOT_READY;
+                return;
+            }
+        }
+
+        if (staggerMs == 0 || fullGroup < 2 || players >= fullGroup || spell->IsTriggered()
+            || !IsCrowdControl(info) || (!includeBosses && caster->IsDungeonBoss()))
+            return;
+
+        // Full length for one player, none at a full group.
+        uint32 const hold = std::min<uint32>(std::max(0, info->GetMaxDuration()), MAX_CC_HOLD_MS);
+        uint32 const block = (staggerMs + hold) * (fullGroup - players) / (fullGroup - 1);
 
         uint64 key = (uint64(map->GetId()) << 32) | map->GetInstanceId();
         uint32 now = getMSTime();
 
         std::lock_guard<std::mutex> guard(lock);
         LastCc& last = lastCc[key];
-        if (last.caster && last.caster != caster->GetGUID() && getMSTimeDiff(last.atMs, now) < window)
+        if (last.atMs && getMSTimeDiff(last.atMs, now) < last.blockMs)
         {
             res = SPELL_FAILED_NOT_READY;
             return;
         }
 
-        last.caster = caster->GetGUID();
         last.atMs = now;
+        last.blockMs = block;
     }
 };
 
