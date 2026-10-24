@@ -1,0 +1,4 @@
+## Interface: 30300
+## Title: NekoDotTooltip
+## Notes: Shows the real per-tick damage of enemy damage-over-time debuffs, which the realm scales for group size.
+NekoDotTooltip.lua

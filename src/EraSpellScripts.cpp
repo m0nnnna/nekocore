@@ -28,6 +28,7 @@
 #include "Item.h"
 
 #include <cstring>
+#include <vector>
 
 #include "EraSpells.h"
 
@@ -55,6 +56,31 @@ namespace
                 return eff;
         }
         return nullptr;
+    }
+
+    /// An era judgement debuff this caster put on its target: Judgement of
+    /// Light, Wisdom, the Crusader or Justice. Righteousness and Command
+    /// deal damage and leave no aura.
+    bool IsEraJudgementDebuff(Aura const* aura, Unit const* caster)
+    {
+        SpellInfo const* info = aura->GetSpellInfo();
+        return EraOfSpell(aura->GetId()) != ERA_WOTLK && aura->GetCasterGUID() == caster->GetGUID()
+            && info->SpellFamilyName == SPELLFAMILY_PALADIN && aura->GetMaxDuration() > 0
+            && info->SpellName[0] && std::strncmp(info->SpellName[0], "Judgement of", 12) == 0;
+    }
+
+    /// "Only one Judgement per Paladin can be active at any one time." The
+    /// core keeps that rule by SPELL_SPECIFIC_JUDGEMENT, which it gives only
+    /// to WotLK's three debuff ids (SpellInfo.cpp, 20184-20186), so an era
+    /// judgement stacked beside the paladin's previous one.
+    void RemoveEraJudgements(Unit* caster, Unit* target)
+    {
+        std::vector<uint32> previous;
+        for (auto const& [id, aurApp] : target->GetAppliedAuras())
+            if (IsEraJudgementDebuff(aurApp->GetBase(), caster))
+                previous.push_back(id);
+        for (uint32 id : previous)
+            target->RemoveAurasDueToSpell(id, caster->GetGUID());
     }
 }
 
@@ -110,6 +136,7 @@ class spell_era_pal_judgement : public SpellScript
         uint32 const judgement = EraSpellFor(era, named) ? EraSpellFor(era, named) : named;
         SpellInfo const* sealInfo = sealEff->GetSpellInfo();
 
+        RemoveEraJudgements(caster, target);
         CastEraJudgement(caster, target, era, judgement);
 
         // Sanctified Judgement: "$s1% chance to return 80% of the mana cost
@@ -584,15 +611,8 @@ public:
             return damage;
 
         for (auto const& [id, aurApp] : victim->GetAppliedAuras())
-        {
-            Aura* aura = aurApp->GetBase();
-            SpellInfo const* info = aura->GetSpellInfo();
-            if (EraOfSpell(id) == ERA_WOTLK || aura->GetCasterGUID() != attacker->GetGUID()
-                || info->SpellFamilyName != SPELLFAMILY_PALADIN || aura->GetMaxDuration() <= 0
-                || !info->SpellName[0] || std::strncmp(info->SpellName[0], "Judgement of", 12) != 0)
-                continue;
-            aura->RefreshDuration();
-        }
+            if (IsEraJudgementDebuff(aurApp->GetBase(), attacker))
+                aurApp->GetBase()->RefreshDuration();
         return damage;
     }
 };
