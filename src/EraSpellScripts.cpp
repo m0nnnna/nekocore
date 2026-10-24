@@ -136,7 +136,11 @@ class spell_era_pal_judgement : public SpellScript
         uint32 const judgement = EraSpellFor(era, named) ? EraSpellFor(era, named) : named;
         SpellInfo const* sealInfo = sealEff->GetSpellInfo();
 
-        RemoveEraJudgements(caster, target);
+        // Only a debuff judgement replaces the previous one. Righteousness
+        // and Command just deal damage, so judging them leaves the debuff up.
+        SpellInfo const* judgementInfo = sSpellMgr->GetSpellInfo(judgement);
+        if (judgementInfo && judgementInfo->HasEffect(SPELL_EFFECT_APPLY_AURA))
+            RemoveEraJudgements(caster, target);
         CastEraJudgement(caster, target, era, judgement);
 
         // Sanctified Judgement: "$s1% chance to return 80% of the mana cost
