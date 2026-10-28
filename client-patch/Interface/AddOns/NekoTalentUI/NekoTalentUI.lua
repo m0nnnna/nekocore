@@ -266,8 +266,10 @@ end
 
 local function SetTreeBackground(background)
 	local base = background and background ~= "" and ("Interface\\TalentFrame\\" .. background) or nil
-	local ok = base and frame.bgTopLeft:SetTexture(base .. "-TopLeft")
-	if ok then
+	-- Don't key off SetTexture's return value: it is nil on some clients
+	-- even when the file loaded, which hid every tree's painting.
+	if base then
+		frame.bgTopLeft:SetTexture(base .. "-TopLeft")
 		frame.bgTopRight:SetTexture(base .. "-TopRight")
 		frame.bgBottomLeft:SetTexture(base .. "-BottomLeft")
 		frame.bgBottomRight:SetTexture(base .. "-BottomRight")
