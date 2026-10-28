@@ -33,6 +33,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 import tempfile
@@ -192,6 +193,10 @@ def main() -> int:
             "text": q["LogDescription"], "sort": q["QuestSortID"],
         })
 
+    # Objective overrides from sweep_objectives.py.
+    objective_fixes = {int(q): o for q, o in
+                       json.loads((Path(__file__).with_name("objective_fixes.json")).read_text(encoding="utf-8")).items()}
+
     # Spawns mod-uac adds to existing NPCs.
     mapper = ZoneMapper(args.wotlk_root)
     spawns: dict[int, dict[int, list[tuple[float, float]]]] = {}
@@ -243,7 +248,7 @@ def main() -> int:
         "-- server keeps the original Classic objectives (mod-individual-progression),",
         "-- so Questie logged \"Missing objective data\" for the second one.",
         "local OBJECTIVES = {",
-        "    [4501] = {{{9166}, {9167}}}, -- Beware of Pterrordax: 10 Pterrordax + 15 Frenzied",
+        *[f"    [{q}] = {lua(o)}," for q, o in objective_fixes.items()],
         "}",
         "",
         "local SPAWNS = {",
