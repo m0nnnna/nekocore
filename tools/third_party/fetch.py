@@ -68,7 +68,7 @@ MODS: dict[str, tuple[str, str, str]] = {
     # spawns show up. install_client.py stages it as Interface/AddOns/Questie-335.
     "Questie-NekoCore": (
         "https://github.com/m0nnnna/Questie-NekoCore",
-        "df4d40238bb618c0284420d856f81344608ee3d9", "data"),
+        "b804f51cb4d8653bdc017e00ff84ebdc08c33793", "data"),
     # Mat-exchange NPC. One Lua file + one world SQL.
     "Acore_ExchangeNpc": (
         "https://github.com/55Honey/Acore_ExchangeNpc",
