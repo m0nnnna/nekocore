@@ -25,7 +25,14 @@
  *   .rlive spells <entry>     Reload creature_template spell slots for <entry> and hot-patch
  *                             every currently live instance in memory — no despawn, safe during
  *                             combat. Use this to change which spells a boss casts mid-fight.
+ *   .rlive cooldowns          Reload spell_cooldown_overrides and re-apply them to the live
+ *                             SpellInfo store, then verify every row against memory.
+ *   .rlive verify item <id>   Compare an item's in-memory spell cooldowns with the DB row.
+ *   .rlive verify spell <id>  Compare a spell's in-memory cooldowns with spell_cooldown_overrides.
  *   .rlive all                Reload every system above in one shot.
+ *
+ * Every reload reports how long it took and compares the number of rows now in
+ * memory with the number of rows in the DB table, so a silent no-op is visible.
  */
 
 #include "AI/SmartScripts/SmartScriptMgr.h"
@@ -43,7 +50,9 @@
 #include "Player.h"
 #include "Pools/PoolMgr.h"
 #include "ScriptMgr.h"
+#include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "Timer.h"
 
 using namespace Acore::ChatCommands;
 
@@ -165,6 +174,33 @@ static uint32 RespawnGobjectsByEntry(uint32 entry)
     return count;
 }
 
+
+// ---------------------------------------------------------------------------
+// Verification helpers
+// ---------------------------------------------------------------------------
+
+static uint32 DbCount(char const* table)
+{
+    QueryResult r = WorldDatabase.Query(std::string("SELECT COUNT(*) FROM ") + table);
+    return r ? r->Fetch()[0].Get<uint32>() : 0;
+}
+
+// Report "<what> reloaded in N ms: X in memory, Y in DB [OK|MISMATCH]".
+// `memCount` is the number of entries the server now holds; `dbTable` is the
+// table it was loaded from. A mismatch means rows were skipped (bad data) or
+// the load did not run.
+static void ReportReload(ChatHandler* handler, char const* what, char const* dbTable,
+                         uint32 memCount, uint32 startMs)
+{
+    uint32 dbCount = DbCount(dbTable);
+    bool ok = memCount == dbCount;
+    handler->PSendSysMessage("[live-reload] %s reloaded in %u ms: %u in memory, %u in DB [%s]",
+        what, GetMSTimeDiffToNow(startMs), memCount, dbCount,
+        ok ? "OK" : "MISMATCH - check Server.log for skipped rows");
+    LOG_INFO("server.loading", "mod-live-reload: {} reloaded in {} ms ({} in memory, {} in DB){}",
+        what, GetMSTimeDiffToNow(startMs), memCount, dbCount, ok ? "" : " MISMATCH");
+}
+
 // ---------------------------------------------------------------------------
 // Command script
 // ---------------------------------------------------------------------------
@@ -176,6 +212,12 @@ public:
 
     ChatCommandTable GetCommands() const override
     {
+        static ChatCommandTable verifyTable =
+        {
+            { "item",  HandleVerifyItemCommand,  SEC_ADMINISTRATOR, Console::Yes },
+            { "spell", HandleVerifySpellCommand, SEC_ADMINISTRATOR, Console::Yes },
+        };
+
         static ChatCommandTable liveTable =
         {
             { "vendor",    HandleVendorCommand,    SEC_ADMINISTRATOR, Console::Yes },
@@ -192,6 +234,8 @@ public:
             { "access",    HandleAccessCommand,    SEC_ADMINISTRATOR, Console::Yes },
             { "spell",     HandleSpellCommand,     SEC_ADMINISTRATOR, Console::Yes },
             { "spells",    HandleSpellsCommand,    SEC_ADMINISTRATOR, Console::Yes },
+            { "cooldowns", HandleCooldownsCommand, SEC_ADMINISTRATOR, Console::Yes },
+            { "verify",    verifyTable },
             { "all",       HandleAllCommand,       SEC_ADMINISTRATOR, Console::Yes },
         };
 
@@ -246,8 +290,10 @@ public:
     static bool HandleItemCommand(ChatHandler* handler)
     {
         LOG_INFO("server.loading", "mod-live-reload: Reloading item_template...");
+        uint32 t = getMSTime();
         sObjectMgr->LoadItemTemplates();
-        handler->SendGlobalGMSysMessage("[live-reload] item_template reloaded.");
+        ReportReload(handler, "item_template", "item_template",
+            sObjectMgr->GetItemTemplateStore()->size(), t);
         return true;
     }
 
@@ -257,9 +303,11 @@ public:
     static bool HandleQuestCommand(ChatHandler* handler)
     {
         LOG_INFO("server.loading", "mod-live-reload: Reloading quest_template...");
+        uint32 t = getMSTime();
         sObjectMgr->LoadQuests();
         sObjectMgr->LoadQuestStartersAndEnders();
-        handler->SendGlobalGMSysMessage("[live-reload] quest_template + starters/enders reloaded.");
+        ReportReload(handler, "quest_template", "quest_template",
+            sObjectMgr->GetQuestTemplates().size(), t);
         return true;
     }
 
@@ -318,8 +366,11 @@ public:
         }
 
         LOG_INFO("server.loading", "mod-live-reload: Reloading gameobject_template...");
+        uint32 t = getMSTime();
         sObjectMgr->LoadGameObjectTemplate();
         sObjectMgr->LoadGameObjectTemplateAddons();
+        ReportReload(handler, "gameobject_template", "gameobject_template",
+            sObjectMgr->GetGameObjectTemplates()->size(), t);
 
         uint32 respawned = RespawnGobjectsByEntry(entry);
 
@@ -540,6 +591,135 @@ public:
     }
 
     // -----------------------------------------------------------------------
+    // .rlive cooldowns
+    // spell_cooldown_overrides is normally applied to SpellInfo once at startup.
+    // Reload the override map, push the values into the live SpellInfo store,
+    // then read every row back out of memory to prove it took effect.
+    // Players see the new cooldown on their next cast; cooldowns already
+    // running keep their old end time.
+    // -----------------------------------------------------------------------
+    static bool HandleCooldownsCommand(ChatHandler* handler)
+    {
+        uint32 t = getMSTime();
+        sSpellMgr->LoadSpellCooldownOverrides();
+
+        QueryResult result = WorldDatabase.Query(
+            "SELECT Id, RecoveryTime, CategoryRecoveryTime FROM spell_cooldown_overrides");
+
+        uint32 rows = 0, applied = 0, changed = 0, missing = 0, bad = 0;
+
+        if (result)
+        {
+            do
+            {
+                Field* f = result->Fetch();
+                uint32 id = f[0].Get<uint32>();
+                uint32 rec = f[1].Get<uint32>();
+                uint32 cat = f[2].Get<uint32>();
+                ++rows;
+
+                SpellInfo* info = const_cast<SpellInfo*>(sSpellMgr->GetSpellInfo(id));
+                if (!info)
+                {
+                    ++missing;
+                    continue;
+                }
+
+                if (info->RecoveryTime != rec || info->CategoryRecoveryTime != cat)
+                    ++changed;
+
+                info->RecoveryTime = rec;
+                info->CategoryRecoveryTime = cat;
+                ++applied;
+
+                // Read back from the live store, not from the pointer we just wrote.
+                SpellInfo const* check = sSpellMgr->GetSpellInfo(id);
+                if (check->RecoveryTime != rec || check->CategoryRecoveryTime != cat)
+                {
+                    ++bad;
+                    LOG_ERROR("server.loading",
+                        "mod-live-reload: spell {} cooldown did not stick (want {}/{}, have {}/{})",
+                        id, rec, cat, check->RecoveryTime, check->CategoryRecoveryTime);
+                }
+            } while (result->NextRow());
+        }
+
+        handler->PSendSysMessage(
+            "[live-reload] spell_cooldown_overrides reloaded in %u ms: %u DB rows, "
+            "%u applied (%u actually changed), %u spell id(s) not in Spell.dbc, %u failed verification [%s]",
+            GetMSTimeDiffToNow(t), rows, applied, changed, missing, bad, bad ? "FAILED" : "OK");
+        handler->SendSysMessage(
+            "[live-reload] New casts use the new cooldown; cooldowns already running keep their old end time. "
+            "Rows deleted from the table are not reverted until restart.");
+        LOG_INFO("server.loading",
+            "mod-live-reload: cooldowns reloaded: {} rows, {} applied, {} changed, {} missing, {} failed",
+            rows, applied, changed, missing, bad);
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // .rlive verify item <entry>
+    // -----------------------------------------------------------------------
+    static bool HandleVerifyItemCommand(ChatHandler* handler, uint32 entry)
+    {
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(entry);
+        QueryResult r = WorldDatabase.Query(
+            "SELECT spellcooldown_1, spellcategorycooldown_1 FROM item_template WHERE entry = {}", entry);
+
+        if (!proto || !r)
+        {
+            handler->PSendSysMessage("[live-reload] Item %u: %s.", entry,
+                !proto ? "not in memory" : "not in item_template");
+            return true;
+        }
+
+        int32 dbCd = r->Fetch()[0].Get<int32>();
+        int32 dbCat = r->Fetch()[1].Get<int32>();
+        int32 memCd = proto->Spells[0].SpellCooldown;
+        int32 memCat = proto->Spells[0].SpellCategoryCooldown;
+        bool ok = dbCd == memCd && dbCat == memCat;
+
+        handler->PSendSysMessage(
+            "[live-reload] Item %u spell1 cooldown: memory %d/%d ms, DB %d/%d ms [%s]",
+            entry, memCd, memCat, dbCd, dbCat, ok ? "OK" : "STALE - run .rlive item");
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
+    // .rlive verify spell <id>
+    // -----------------------------------------------------------------------
+    static bool HandleVerifySpellCommand(ChatHandler* handler, uint32 id)
+    {
+        SpellInfo const* info = sSpellMgr->GetSpellInfo(id);
+        if (!info)
+        {
+            handler->PSendSysMessage("[live-reload] Spell %u is not loaded.", id);
+            return true;
+        }
+
+        QueryResult r = WorldDatabase.Query(
+            "SELECT RecoveryTime, CategoryRecoveryTime FROM spell_cooldown_overrides WHERE Id = {}", id);
+
+        if (!r)
+        {
+            handler->PSendSysMessage(
+                "[live-reload] Spell %u has no override row; in memory %u/%u ms (from Spell.dbc/spell_dbc).",
+                id, info->RecoveryTime, info->CategoryRecoveryTime);
+            return true;
+        }
+
+        uint32 dbRec = r->Fetch()[0].Get<uint32>();
+        uint32 dbCat = r->Fetch()[1].Get<uint32>();
+        bool ok = info->RecoveryTime == dbRec && info->CategoryRecoveryTime == dbCat;
+
+        handler->PSendSysMessage(
+            "[live-reload] Spell %u cooldown: memory %u/%u ms, DB override %u/%u ms [%s]",
+            id, info->RecoveryTime, info->CategoryRecoveryTime, dbRec, dbCat,
+            ok ? "OK" : "STALE - run .rlive cooldowns");
+        return true;
+    }
+
+    // -----------------------------------------------------------------------
     // .rlive all
     // Reload every managed system. Does NOT force creature/gobject respawns —
     // use the targeted subcommands for that.
@@ -584,7 +764,7 @@ public:
         LootTemplates_Milling.ResetConditions();       LoadLootTemplates_Milling();
 
         handler->SendGlobalGMSysMessage(
-            "[live-reload] Done. Use '.rlive creature <entry>' or '.rlive gobject <entry>' "
+            "[live-reload] Done (cooldown overrides are separate: run .rlive cooldowns). Use '.rlive creature <entry>' or '.rlive gobject <entry>' "
             "to also respawn live world instances.");
 
         return true;
