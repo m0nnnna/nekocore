@@ -19,7 +19,9 @@
  * mob keeps fighting.
  *
  * Bosses are left alone unless Nekocore.CcStagger.Bosses is set: their CC is
- * scripted as part of the fight.
+ * scripted as part of the fight. Interrupts (kicks) count as crowd control,
+ * and boss kicks are staggered too unless Nekocore.CcStagger.BossInterrupts
+ * is off: the lockout can be 8-10 sec and bosses chain them.
  *
  * Except mind control on the only player in the instance, boss or not and
  * triggered or not: nobody is left to break it, so the fight just stops
@@ -46,6 +48,7 @@ namespace
     uint32 staggerMs = 3000;
     uint32 fullGroup = 5;
     bool includeBosses = false;
+    bool bossInterrupts = true;
 
     // The longest a CC counts as still running: a long one (a 20 sec
     // sleep) should not shut every other CC out for its whole length.
@@ -79,8 +82,22 @@ namespace
             info->HasAura(SPELL_AURA_AOE_CHARM);
     }
 
+    // A kick: no aura on the player, it just locks one spell school for the
+    // spell's duration (8-10 sec on some bosses). AutoBalance's CCDuration never
+    // sees it, so a solo healer got locked out again as soon as it ended.
+    bool IsInterrupt(SpellInfo const* info)
+    {
+        for (SpellEffectInfo const& effect : info->GetEffects())
+            if (effect.IsEffect(SPELL_EFFECT_INTERRUPT_CAST))
+                return true;
+        return false;
+    }
+
     bool IsCrowdControl(SpellInfo const* info)
     {
+        if (IsInterrupt(info))
+            return true;
+
         // By aura first (the list AutoBalance uses, plus root)...
         if (info->HasAura(SPELL_AURA_MOD_CHARM) || info->HasAura(SPELL_AURA_MOD_CONFUSE) ||
             info->HasAura(SPELL_AURA_MOD_DISARM) || info->HasAura(SPELL_AURA_MOD_FEAR) ||
@@ -112,6 +129,7 @@ public:
         staggerMs = sConfigMgr->GetOption<uint32>("Nekocore.CcStagger.Ms", 3000);
         fullGroup = sConfigMgr->GetOption<uint32>("Nekocore.CcStagger.FullGroup", 5);
         includeBosses = sConfigMgr->GetOption<bool>("Nekocore.CcStagger.Bosses", false);
+        bossInterrupts = sConfigMgr->GetOption<bool>("Nekocore.CcStagger.BossInterrupts", true);
     }
 };
 
@@ -149,7 +167,12 @@ public:
         }
 
         if (staggerMs == 0 || fullGroup < 2 || players >= fullGroup || spell->IsTriggered()
-            || !IsCrowdControl(info) || (!includeBosses && caster->IsDungeonBoss()))
+            || !IsCrowdControl(info))
+            return;
+
+        // Boss CC is scripted into the fight, but a boss kick is not: it only
+        // matters that two of them never land back to back.
+        if (!includeBosses && caster->IsDungeonBoss() && !(bossInterrupts && IsInterrupt(info)))
             return;
 
         // Full length for one player, none at a full group.

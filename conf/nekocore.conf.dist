@@ -314,3 +314,13 @@ Nekocore.CcStagger.FullGroup = 5
 #        Default:     0
 #
 Nekocore.CcStagger.Bosses = 0
+
+# Nekocore.CcStagger.BossInterrupts
+#
+#        Description: Interrupts (kicks, pummels, ...) count as crowd control for the stagger above,
+#                      and a boss's interrupt is held back too even with CcStagger.Bosses off: a
+#                      lockout can last 8-10 sec and bosses chain them. 0 leaves boss kicks alone.
+#
+#        Default:     1
+#
+Nekocore.CcStagger.BossInterrupts = 1
