@@ -1,0 +1,25 @@
+diff --git a/src/ABAllCreatureScript.cpp b/src/ABAllCreatureScript.cpp
+index f0c4782..15c3bfc 100644
+--- a/src/ABAllCreatureScript.cpp
++++ b/src/ABAllCreatureScript.cpp
+@@ -559,7 +559,7 @@ void AutoBalance_AllCreatureScript::ModifyCreatureAttributes(Creature* creature)
+         // handle "special" creatures
+         // note that these already passed a more complex check above
+         if (
+-            (creature->IsTotem() && creature->IsSummon() && creatureABInfo->summoner && creatureABInfo->summoner->IsPlayer()) ||
++            (creature->IsTotem() && creature->IsSummon() && creature->ToTempSummon() && creature->ToTempSummon()->GetSummoner() && creature->ToTempSummon()->GetSummoner()->IsPlayer()) ||
+             (
+                 creature->IsCritter() && creatureABInfo->UnmodifiedLevel <= 5 && creature->GetMaxHealth() <= 100
+                 )
+@@ -1487,7 +1487,10 @@ bool AutoBalance_AllCreatureScript::_isSummonCloneOfSummoner(Creature* summon)
+     AutoBalanceCreatureInfo* summonABInfo = summon->CustomData.GetDefault<AutoBalanceCreatureInfo>("AutoBalanceCreatureInfo");
+ 
+     // get the saved summoner
+-    Creature* summoner = summonABInfo->summoner;
++    // the stored pointer can dangle (summoner despawned), so resolve it by GUID
++    Creature* summoner = nullptr;
++    if (summonABInfo->summoner && summon->ToTempSummon() && summon->ToTempSummon()->GetSummoner())
++        summoner = summon->ToTempSummon()->GetSummoner()->ToCreature();
+ 
+     // if the summoner doesn't exist
+     if (!summoner)
