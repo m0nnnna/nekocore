@@ -19,3 +19,7 @@ UPDATE `item_template` SET `stackable` = 250 WHERE `entry` IN (
     12841, -- Invader's Scourgestone
     12843  -- Corruptor's Scourgestone
 );
+
+-- Black Diamond (Blackrock quest/crafting item) was capped at 5; its base
+-- stack size is 20.
+UPDATE `item_template` SET `stackable` = 20 WHERE `entry` = 11754;

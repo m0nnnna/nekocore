@@ -741,6 +741,8 @@ ERA_HIDDEN_FROM_CORE = {17056, 17058, 17059, 17060, 17061}  # Furor r1-r5
 # 0 -- "gain Mana equal to the base cost of the spell", all of it, hard-coded
 # by that core -- so a Vanilla clone returned 1% of the cost, i.e. no mana on
 # a crit. Only an empty slot is filled; TBC keeps its own 60%.
+# The slot's DieSides is 0 on the 1.12 rows, so CalcValue adds no +1: store the
+# percent itself (100), not percent-1, or every refund is 1% short.
 ERA_ILLUMINATION = {20210, 20212, 20213, 20214, 20215}
 VANILLA_ILLUMINATION_COST_PCT = 100
 
@@ -762,7 +764,7 @@ def apply_era_talent_rewrites(row: dict, original_id: int) -> bool:
         row["SpellClassSet"] = SPELLFAMILY_GENERIC
         return True
     if original_id in ERA_ILLUMINATION and row["EffectBasePoints_1"] == 0:
-        row["EffectBasePoints_1"] = VANILLA_ILLUMINATION_COST_PCT - 1
+        row["EffectBasePoints_1"] = VANILLA_ILLUMINATION_COST_PCT
         return True
     return False
 

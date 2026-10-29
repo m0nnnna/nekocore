@@ -178,6 +178,9 @@ ERA_SCRIPTS = {
     # Negative: every rank of the chain, like the core's own negative ids.
     ("Vanilla", -20473): "spell_era_pal_holy_shock",
     ("TBC", -20473): "spell_era_pal_holy_shock",
+    # Illumination: the refund's cost comes from the era's own Holy Shock.
+    ("Vanilla", -20210): "spell_era_pal_illumination",
+    ("TBC", -20210): "spell_era_pal_illumination",
     # Vanilla Sweeping Strikes is 12292 (WotLK Death Wish). Its era row is a
     # DUMMY aura in EFFECT_0 that procs on melee, the exact shape WotLK's own
     # handler binds to, so the stock script serves it unchanged.

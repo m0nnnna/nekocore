@@ -263,6 +263,57 @@ class spell_era_pal_holy_shock : public SpellScript
     }
 };
 
+// Illumination (Vanilla/TBC 20210 chain): a crit heal returns mana equal to a
+// percent of that spell's base cost. WotLK's spell_pal_illumination reads a
+// Holy Shock heal's cost from WotLK's own Holy Shock chain (rank by rank),
+// which prices the refund at WotLK's cost, not the era's. This looks the
+// cost up in the era's Holy Shock chain instead. A Holy Shock DAMAGE crit
+// carries no HealInfo and returns nothing.
+class spell_era_pal_illumination : public AuraScript
+{
+    PrepareAuraScript(spell_era_pal_illumination);
+
+    static constexpr uint32 HOLY_SHOCK_R1 = 20473;
+    static constexpr uint32 ILLUMINATION_ENERGIZE = 20272;
+    static constexpr uint32 HOLY_SHOCK_FAMILY_FLAG1 = 0x00010000;
+
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        Era const era = EraOfSpell(spellInfo->Id);
+        return era != ERA_WOTLK && EraSpellFor(era, HOLY_SHOCK_R1) && ValidateSpellInfo({ ILLUMINATION_ENERGIZE });
+    }
+
+    void HandleProc(AuraEffect const* aurEff, ProcEventInfo& eventInfo)
+    {
+        PreventDefaultAction();
+
+        HealInfo* healInfo = eventInfo.GetHealInfo();
+        if (!healInfo || !healInfo->GetSpellInfo())
+            return;
+
+        SpellInfo const* originalSpell = healInfo->GetSpellInfo();
+        if (originalSpell->SpellFamilyFlags[1] & HOLY_SHOCK_FAMILY_FLAG1)
+        {
+            // The Holy Shock heal: the cost is on the cast spell of the same rank.
+            uint32 const first = EraSpellFor(EraOfSpell(GetSpellInfo()->Id), HOLY_SHOCK_R1);
+            uint32 const cast = first ? sSpellMgr->GetSpellWithRank(first, originalSpell->GetRank(), true) : 0;
+            originalSpell = cast ? sSpellMgr->GetSpellInfo(cast) : nullptr;
+        }
+        if (!originalSpell)
+            return;
+
+        Unit* target = eventInfo.GetActor();
+        int32 const baseCost = originalSpell->ManaCost + int32(CalculatePct(target->GetCreateMana(), originalSpell->ManaCostPercentage));
+        int32 bp = CalculatePct(baseCost, aurEff->GetSpellInfo()->Effects[EFFECT_1].CalcValue());
+        target->CastCustomSpell(target, ILLUMINATION_ENERGIZE, &bp, nullptr, nullptr, true, nullptr, aurEff);
+    }
+
+    void Register() override
+    {
+        OnEffectProc += AuraEffectProcFn(spell_era_pal_illumination::HandleProc, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL);
+    }
+};
+
 // Cold Snap (Vanilla 12472 / TBC 11958): "When activated, this spell
 // finishes the cooldown on all of your Frost spells." The same job as
 // WotLK's spell_mage_cold_snap, which cannot be reused: it spares only
@@ -631,6 +682,7 @@ void AddSC_era_spell_scripts()
     RegisterSpellScript(spell_era_warl_improved_drain_soul);
     RegisterSpellScript(spell_era_mag_cold_snap);
     RegisterSpellScript(spell_era_pal_holy_shock);
+    RegisterSpellScript(spell_era_pal_illumination);
     RegisterSpellScript(spell_era_pal_judgement);
     RegisterSpellScript(spell_era_pal_judgement_of_light_wisdom);
     RegisterSpellScript(spell_era_hun_aspect_of_the_viper);
