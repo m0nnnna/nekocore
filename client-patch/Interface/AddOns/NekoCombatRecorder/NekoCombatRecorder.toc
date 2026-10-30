@@ -1,0 +1,5 @@
+## Interface: 30300
+## Title: NekoCombatRecorder
+## Notes: Records every combat event and your stats during fights so problems can be diagnosed. Type /ncr.
+## SavedVariables: NekoCombatRecorderDB
+NekoCombatRecorder.lua
