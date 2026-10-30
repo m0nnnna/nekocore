@@ -100,6 +100,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellScriptLoader.h"
 #include "Unit.h"
@@ -212,6 +213,29 @@ class spell_nekocore_mana_drain_scaling_e0 : public SpellScript
     }
 };
 
+// Soul Tap (16430, Thuzadin Necromancer) leeches health (aura 53, effect 0)
+// and mana (aura 64, effect 1) at 350 every 2 s. AutoBalance's periodic hook
+// is called from the health-leech tick, so effect 0 is already scaled; the
+// mana-leech tick never calls it, so effect 1 stays a flat 350 and drains a
+// small party's casters. Scale only that amount, once, when the aura is built.
+class spell_nekocore_soul_tap_mana_scaling : public AuraScript
+{
+    PrepareAuraScript(spell_nekocore_soul_tap_mana_scaling);
+
+    void CalcAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    {
+        float multiplier = ScaledDamageMultiplierOf(GetCaster());
+        if (multiplier == 1.0f)
+            return;
+        amount = int32(amount * multiplier);
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_nekocore_soul_tap_mana_scaling::CalcAmount, EFFECT_1, SPELL_AURA_PERIODIC_MANA_LEECH);
+    }
+};
+
 void AddSC_nekocore_mana_burn_scaling()
 {
     // EFFECT_0 -- 65 spells
@@ -294,4 +318,5 @@ void AddSC_nekocore_mana_burn_scaling()
     RegisterSpellScriptWithArgs(spell_nekocore_mana_burn_scaling_e2, "spell_nekocore_mana_burn_62471");
     // POWER_DRAIN, EFFECT_0
     RegisterSpellScriptWithArgs(spell_nekocore_mana_drain_scaling_e0, "spell_nekocore_mana_drain_7485");
+    RegisterSpellScript(spell_nekocore_soul_tap_mana_scaling);
 }
