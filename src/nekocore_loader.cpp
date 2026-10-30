@@ -23,6 +23,7 @@ void AddSC_nekocore_patch_check();
 void AddSC_cc_stagger();
 void AddSC_era_consumables();
 void AddSC_era_hit_crit();
+void AddSC_nekocore_boss_teleporter();
 
 void AddnekocoreScripts()
 {
@@ -44,4 +45,5 @@ void AddnekocoreScripts()
     AddSC_cc_stagger();
     AddSC_era_consumables();
     AddSC_era_hit_crit();
+    AddSC_nekocore_boss_teleporter();
 }
