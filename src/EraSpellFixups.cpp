@@ -105,6 +105,17 @@ public:
         SpellInfo const* shieldBash = sSpellMgr->GetSpellInfo(311972);
         if (fourSeconds && shieldBash && shieldBash->GetDuration() == 8000)
             const_cast<SpellInfo*>(shieldBash)->DurationEntry = fourSeconds;
+
+        // Baroness Anastari's Silence (18327) lasts 10 s on a 13 s repeat,
+        // which keeps a caster silenced three casts in four. Halve it.
+        SpellDurationEntry const* fiveSeconds = nullptr;
+        for (uint32 i = 0; i < sSpellDurationStore.GetNumRows() && !fiveSeconds; ++i)
+            if (SpellDurationEntry const* entry = sSpellDurationStore.LookupEntry(i))
+                if (entry->Duration[0] == 5000 && entry->Duration[1] == 0 && entry->Duration[2] == 5000)
+                    fiveSeconds = entry;
+        SpellInfo const* anastariSilence = sSpellMgr->GetSpellInfo(18327);
+        if (fiveSeconds && anastariSilence && anastariSilence->GetDuration() == 10000)
+            const_cast<SpellInfo*>(anastariSilence)->DurationEntry = fiveSeconds;
     }
 };
 
