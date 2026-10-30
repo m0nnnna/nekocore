@@ -6,7 +6,9 @@
  *
  *   - ranked auras and forms that should replace their lower rank;
  *   - weapon and armour proficiency copies that should teach their skill;
- *   - Seal of the Crusader's "attacks faster, but deals less damage".
+ *   - Seal of the Crusader's "attacks faster, but deals less damage";
+ *   - the Crimson Guardsman's Shield Bash, whose 8 s lockout is too long
+ *     for a single player (capped to 4 s).
  */
 
 #include "ScriptMgr.h"
@@ -92,6 +94,17 @@ public:
             ++changed;
         }
         LOG_INFO("module.nekocore", ">> Era spells: {} ranked aura/form spell(s) now replace their lower ranks", changed);
+
+        // Interrupt lockout is the interrupting spell's duration. Point the
+        // guardsman's Shield Bash (311972, 8 s) at the stock 4 s duration.
+        SpellDurationEntry const* fourSeconds = nullptr;
+        for (uint32 i = 0; i < sSpellDurationStore.GetNumRows() && !fourSeconds; ++i)
+            if (SpellDurationEntry const* entry = sSpellDurationStore.LookupEntry(i))
+                if (entry->Duration[0] == 4000 && entry->Duration[1] == 0 && entry->Duration[2] == 4000)
+                    fourSeconds = entry;
+        SpellInfo const* shieldBash = sSpellMgr->GetSpellInfo(311972);
+        if (fourSeconds && shieldBash && shieldBash->GetDuration() == 8000)
+            const_cast<SpellInfo*>(shieldBash)->DurationEntry = fourSeconds;
     }
 };
 
