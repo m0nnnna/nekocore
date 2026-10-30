@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: m0nnnna <mona@frennet.xyz>
+Date: Thu, 29 Oct 2026 12:00:00 -0400
+Subject: [PATCH] nekocore: shield spikes roll their damage range on every proc
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+---
+ src/server/game/Spells/Auras/SpellAuraEffects.cpp | 1 +
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/server/game/Spells/Auras/SpellAuraEffects.cpp b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+index d6887290d..0f2390a5d 100644
+--- a/src/server/game/Spells/Auras/SpellAuraEffects.cpp
++++ b/src/server/game/Spells/Auras/SpellAuraEffects.cpp
+@@ -6959,7 +6961,20 @@ void AuraEffect::HandleProcTriggerDamageAuraProc(AuraApplication* aurApp, ProcEv
+     }
+ 
+     SpellNonMeleeDamage damageInfo(target, triggerTarget, GetSpellInfo(), GetSpellInfo()->SchoolMask);
+-    uint32 damage = target->SpellDamageBonusDone(triggerTarget, GetSpellInfo(), GetAmount(), SPELL_DIRECT_DAMAGE, GetEffIndex());
++    int32 amount = GetAmount();
++    // nekocore: shield spikes (Iron, Mithril, Thorium, Felsteel, Titanium) list a
++    // range, e.g. Mithril 16-20. The aura rolls it once when it is applied, so the
++    // spike would hit for that one number until the shield is re-equipped. Roll
++    // again on every proc.
++    switch (GetId())
++    {
++        case 9784: case 9782: case 16624: case 29455: case 56355:
++            amount = GetSpellInfo()->Effects[GetEffIndex()].CalcValue(GetCaster(), &m_baseAmount, nullptr);
++            break;
++        default:
++            break;
++    }
++    uint32 damage = target->SpellDamageBonusDone(triggerTarget, GetSpellInfo(), amount, SPELL_DIRECT_DAMAGE, GetEffIndex());
+     damage = triggerTarget->SpellDamageBonusTaken(target, GetSpellInfo(), damage, SPELL_DIRECT_DAMAGE);
+     target->CalculateSpellDamageTaken(&damageInfo, damage, GetSpellInfo());
+     Unit::DealDamageMods(damageInfo.target, damageInfo.damage, &damageInfo.absorb);
+-- 
+2.55.0.windows.2
+

@@ -67,3 +67,9 @@ applied), on the dev box and in CI; `--check` confirms `server/` carries them.
   it unreachable and the mob evaded: Maraudon's Thessala Hydras evaded as
   they surfaced. Both ends in contact with water now counts as a water
   path for a unit that can swim.
+- `0009-shield-spike-rolls-each-proc.patch` -- the shield spikes (Iron 9784,
+  Mithril 9782, Thorium 16624, Felsteel 29455, Titanium 56355) are
+  `PROC_TRIGGER_DAMAGE` auras, and the core rolls their dice once when the
+  aura is applied and reuses that `GetAmount()` on every proc, so Mithril's
+  16-20 hit for one fixed number until the shield was re-equipped.
+  `AuraEffect::HandleProcTriggerDamageAuraProc` now rolls them on every proc.
