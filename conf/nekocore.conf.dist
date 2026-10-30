@@ -324,3 +324,65 @@ Nekocore.CcStagger.Bosses = 0
 #        Default:     1
 #
 Nekocore.CcStagger.BossInterrupts = 1
+
+###################################################################################################
+# COMBAT RECORDER (mod-combat-recorder)
+###################################################################################################
+
+# CombatRecorder.Enable
+#
+#        Description: Write every combat event involving a player (or their pet) to
+#                      <LogsDir>/CombatRecorder/combat-YYYY-MM-DD.jsonl for diagnosing
+#                      combat reports. Reloadable. Off by default: it is a firehose.
+#
+#        Default:     0
+#
+CombatRecorder.Enable = 0
+
+# CombatRecorder.Players
+#
+#        Description: Comma-separated character names to record. Empty records everyone.
+#
+#        Default:     ""
+#
+CombatRecorder.Players = ""
+
+# CombatRecorder.RollData
+#
+#        Description: Also record the melee roll inputs (crit/miss/dodge/parry/block chances) per swing.
+#
+#        Default:     1
+#
+CombatRecorder.RollData = 1
+
+# CombatRecorder.CreatureSnapshots
+#
+#        Description: Record full stat/AutoBalance snapshots of the creatures fought.
+#
+#        Default:     1
+#
+CombatRecorder.CreatureSnapshots = 1
+
+# CombatRecorder.SnapshotIntervalMs
+#
+#        Description: How often a player in combat gets a full state snapshot. 0 = only on enter/death.
+#
+#        Default:     2000
+#
+CombatRecorder.SnapshotIntervalMs = 2000
+
+# CombatRecorder.FlushMs
+#
+#        Description: How often the buffer is written to disk.
+#
+#        Default:     1000
+#
+CombatRecorder.FlushMs = 1000
+
+# CombatRecorder.MaxBufferMB
+#
+#        Description: In-memory cap between flushes; events beyond it are dropped and counted.
+#
+#        Default:     8
+#
+CombatRecorder.MaxBufferMB = 8
