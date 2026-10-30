@@ -43,8 +43,11 @@
  * way this dynamic per-cast multiplier does, which is the whole reason
  * for building this instead.
  *
- * Fix, part one: a SpellScript on OnEffectLaunchTarget -- runs just
- * before Spell::EffectPowerBurn processes each target -- that scales the
+ * Fix, part one: a SpellScript on OnEffectHitTarget -- runs just
+ * before Spell::EffectPowerBurn processes each target (it only acts in
+ * HIT_TARGET mode, and Spell::HandleEffects recomputes `damage` from the
+ * DBC at the start of every mode, so a LAUNCH_TARGET change is thrown
+ * away: the first version of this fix never scaled the mana at all) -- that scales the
  * effect's base value by the CASTER's own AutoBalance
  * ScaledDamageMultiplier before the core handler ever sees it, so the
  * mana drained is scaled by the same factor mod-autobalance already
@@ -154,7 +157,7 @@ class spell_nekocore_mana_burn_scaling_e0 : public SpellScript
 
     void Register() override
     {
-        OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e0::ScaleEffectValue, EFFECT_0, SPELL_EFFECT_POWER_BURN);
+        OnEffectHitTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e0::ScaleEffectValue, EFFECT_0, SPELL_EFFECT_POWER_BURN);
         OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e0::UndoDamageDoubleScaling);
     }
 };
@@ -166,7 +169,7 @@ class spell_nekocore_mana_burn_scaling_e1 : public SpellScript
 
     void Register() override
     {
-        OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e1::ScaleEffectValue, EFFECT_1, SPELL_EFFECT_POWER_BURN);
+        OnEffectHitTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e1::ScaleEffectValue, EFFECT_1, SPELL_EFFECT_POWER_BURN);
         OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e1::UndoDamageDoubleScaling);
     }
 };
@@ -178,7 +181,7 @@ class spell_nekocore_mana_burn_scaling_e2 : public SpellScript
 
     void Register() override
     {
-        OnEffectLaunchTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e2::ScaleEffectValue, EFFECT_2, SPELL_EFFECT_POWER_BURN);
+        OnEffectHitTarget += SpellEffectFn(spell_nekocore_mana_burn_scaling_e2::ScaleEffectValue, EFFECT_2, SPELL_EFFECT_POWER_BURN);
         OnHit += SpellHitFn(spell_nekocore_mana_burn_scaling_e2::UndoDamageDoubleScaling);
     }
 };
