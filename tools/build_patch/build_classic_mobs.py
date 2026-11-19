@@ -50,6 +50,7 @@ Usage (needs the 1.12.1 and 3.3.5a clients and the dev stack's database):
 from __future__ import annotations
 
 import argparse
+import os
 import collections
 import json
 import sqlite3
@@ -109,6 +110,14 @@ SMART_COLUMNS = ("entryorguid", "id", "event_type", "event_phase_mask", "event_c
 def mysql(sql: str, container: str) -> list[list[str]]:
     """Runs a query in the dev stack's database container. The root password
     is read inside the container, so nothing secret passes through here."""
+    sock = os.environ.get("ACORE_MYSQL_SOCKET")
+    if sock:  # scratch/dev server over a unix socket instead of the docker container
+        out = subprocess.run(["mariadb", "--no-defaults", "-S", sock, "-uroot", "-B", "-N",
+                              "--default-character-set=utf8mb4", "acore_world"],
+                             input=sql, capture_output=True, text=True, encoding="utf-8")
+        if out.returncode != 0:
+            raise SystemExit(f"mysql failed: {out.stderr.strip()}")
+        return [line.split("\t") for line in out.stdout.splitlines() if line]
     cmd = ["docker", "exec", "-i", container, "sh", "-c",
            'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -B -N --default-character-set=utf8mb4 acore_world']
     out = subprocess.run(cmd, input=sql, capture_output=True, text=True, encoding="utf-8")
@@ -190,6 +199,8 @@ def main() -> int:
                     help="also give classic creatures OUTSIDE the 5-man dungeons (and outside any raid) the 1.12 "
                          "copy of the spells they cast. Off by default: the reports were about dungeons, and it "
                          "adds ~60 more spell copies (every damage spell a classic mob casts).")
+    ap.add_argument("--world-abilities", action="store_true",
+                    help="also delete/retime casts for every open-world classic creature, not only dungeon mobs")
     ap.add_argument("--container", default="ac-database", help="dev stack database container")
     ap.add_argument("--out-sql", type=Path,
                     default=REPO_ROOT / "data" / "sql" / "db-world" / "base" / "zzz_nekocore_classic_dungeon_mobs.sql")
@@ -234,6 +245,8 @@ def main() -> int:
     # --- which creatures are in scope -----------------------------------
     def in_scope(entry: int) -> bool:
         c = cm_creatures.get(entry)
+        if args.world_abilities:
+            return open_world(entry) or (entry in dungeon_creatures and c is not None and not c["ScriptName"])
         return (entry in dungeon_creatures and c is not None and not c["ScriptName"])
 
     def open_world(entry: int) -> bool:
